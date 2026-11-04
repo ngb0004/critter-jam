@@ -348,8 +348,16 @@ overlay.addEventListener('click', (e) => {
 
 // ------------------------------------------------------------------ loop
 
+// ?capture steps the game one video frame at a time (see __jam.advance) for smooth ad recording.
+const capture = params.has('capture');
+let virtualNow = 0;
+
 function frame(now: number): void {
-  requestAnimationFrame(frame);
+  if (!capture) requestAnimationFrame(frame);
+  tick(now);
+}
+
+function tick(now: number): void {
   const t = now / 1000;
   if (params.has('auto') && state && screen === 'playing' && t > autoTimer) {
     // Autopilot for testing and ad recording: a casual bot's next move.
@@ -374,6 +382,13 @@ function frame(now: number): void {
   startLevel,
   save,
   tap: handleTap,
+  /** Capture mode: advance by whole video frames. */
+  advance(frames = 1, fps = 30) {
+    for (let i = 0; i < frames; i++) {
+      virtualNow += 1000 / fps;
+      tick(virtualNow);
+    }
+  },
 };
 
 layout();
@@ -381,5 +396,6 @@ void loadLevels().then(() => {
   const lv = Number(params.get('level'));
   if (lv) startLevel(lv);
   else showHome();
-  requestAnimationFrame(frame);
+  if (capture) tick(0);
+  else requestAnimationFrame(frame);
 });
