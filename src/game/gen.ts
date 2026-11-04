@@ -57,22 +57,26 @@ export function targetWinRate(level: number): number {
 
 /** Size grows with level; the curve above sets the bite within that size. */
 export function paramsFor(level: number, rng: Rng): GenParams {
-  const t = Math.min(1, level / 150);
-  const colors = Math.round(3 + t * 4 + rng.range(-0.5, 0.5));
-  const vehiclesPerColor = Math.round(2 + t * 3 + rng.range(-0.5, 0.5));
+  // Boards grow to about 54 critters by level 60 and stay there; past that the
+  // bite comes from bus order, hidden rows and the bench, not from size.
+  const t = Math.min(1, level / 60);
+  const colors = Math.max(3, Math.min(6, Math.round(3 + t * 3 + rng.range(-0.5, 0.5))));
+  const vehiclesPerColor = Math.max(2, Math.min(3, Math.round(2 + t * 1.4 + rng.range(-0.4, 0.4))));
+  const blockedShare = level < 10 ? 0 : 0.04 + Math.min(1, level / 150) * 0.06;
   const critters = colors * vehiclesPerColor * CAP;
-  const cols = Math.min(8, Math.max(5, Math.round(4.5 + t * 3)));
-  const rows = Math.ceil((critters * 1.25) / cols) + 1;
+  const cols = Math.min(7, Math.max(5, Math.round(4.5 + t * 2.5)));
+  // Packed from the front: just enough rows for the critters and the scenery.
+  const rows = Math.min(10, Math.ceil((critters * (1 + blockedShare)) / cols));
   return {
     cols,
     rows,
-    colors: Math.max(3, colors),
-    vehiclesPerColor: Math.max(2, vehiclesPerColor),
+    colors,
+    vehiclesPerColor,
     benchSlots: level < 20 ? 7 : level < 50 ? 6 : 5,
-    visibleRows: level < 12 ? rows : Math.max(3, 5 - Math.floor(t * 2)),
-    blocked: level < 10 ? 0 : 0.04 + t * 0.06,
+    visibleRows: level < 12 ? rows : Math.max(3, 5 - Math.floor(Math.min(1, level / 150) * 2)),
+    blocked: blockedShare,
     clumping: 0.8 - t * 0.5,
-    temperature: 0.3 + t * 0.6,
+    temperature: 0.3 + Math.min(1, level / 150) * 0.6,
   };
 }
 
@@ -81,9 +85,10 @@ export function randomLevel(id: number, p: GenParams, rng: Rng): LevelDef {
   const cells = new Array<number>(n).fill(EMPTY);
   const critters = p.colors * p.vehiclesPerColor * CAP;
   // Scenery blocks, never in the front row.
-  const blocks = Math.round(n * p.blocked);
+  const blocks = Math.min(Math.round(n * p.blocked), Math.max(0, n - critters));
   for (let b = 0; b < blocks; b++) {
     const i = p.cols + rng.int(n - p.cols);
+    if (cells[i] === BLOCKED) continue;
     cells[i] = BLOCKED;
   }
   // Fill from the front, leaving some holes near the back so paths exist.

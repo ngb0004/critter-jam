@@ -551,7 +551,8 @@ export class JamScene {
       const idle = Math.sin(t * 3 + a.hop) * 0.02;
       const bob = moving ? Math.abs(Math.sin(t * 22 + a.hop)) * 0.09 : idle;
       const squash = moving ? 1 + Math.sin(t * 22 + a.hop) * 0.06 : 1 + idle * 2;
-      const face = a.state === 'yard' && !moving ? Math.PI : a.facing;
+      // Waiting critters look at the player; walking ones face where they're going.
+      const face = a.state === 'yard' && !moving ? 0 : a.facing;
       // Reachable critters in the yard stand a touch taller and glance at the road.
       const ready = a.state === 'yard' && this.reach[a.cell] === 1 && !hidden;
       this.tmp.position.set(a.pos.x, a.pos.y + bob, a.pos.z);
