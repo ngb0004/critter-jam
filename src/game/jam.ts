@@ -79,7 +79,7 @@ export function currentVehicle(s: JamState): Color | null {
 export function reachable(s: JamState, out?: Uint8Array): Uint8Array {
   const { cols, rows } = s.def;
   const n = cols * rows;
-  const res = out ?? new Uint8Array(n);
+  const res: Uint8Array = out ?? new Uint8Array(n);
   res.fill(0);
   const flood = new Uint8Array(n);
   const stack: number[] = [];

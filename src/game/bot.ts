@@ -39,6 +39,10 @@ export function playOnce(def: LevelDef, profile: BotProfile, rng: Rng): RunResul
   return { won: s.status === 'won', moves: s.moves, progress: s.boarded / total };
 }
 
+export function chooseMoveForTest(s: JamState, p: BotProfile, rng: Rng): number {
+  return chooseMove(s, p, rng, new Uint8Array(s.def.cols * s.def.rows));
+}
+
 function chooseMove(s: JamState, p: BotProfile, rng: Rng, reach: Uint8Array): number {
   reachable(s, reach);
   const legal: number[] = [];
@@ -53,6 +57,8 @@ function chooseMove(s: JamState, p: BotProfile, rng: Rng, reach: Uint8Array): nu
   if (matching.length && seats > 0) return bestFreeing(s, matching, rng);
 
   // Otherwise bench something useful: a visible critter whose vehicle is coming soon.
+  // Benching is conservative, the way a person plays: the last free slot is kept for
+  // the next bus's colour, and a colour is only held once it can complete a set.
   const soon = new Map<number, number>();
   for (let k = 1; k <= p.lookahead; k++) {
     const idx = s.vehicleIdx + k;
@@ -60,25 +66,46 @@ function chooseMove(s: JamState, p: BotProfile, rng: Rng, reach: Uint8Array): nu
   }
   const free = s.def.benchSlots - s.bench.length;
   const benchedOf = (c: number) => s.bench.filter((b) => b === c).length;
-  const candidates = legal
-    .filter((i) => isVisible(s, i))
+  const visibleLegal = legal.filter((i) => isVisible(s, i));
+  // "What's in front of the colour I need?": benching a critter that stands
+  // between the front and a critter of the current bus colour is the move a
+  // person looks for first.
+  const cols = s.def.cols;
+  const rows = s.def.rows;
+  const unblocks = (i: number): number => {
+    const x = i % cols;
+    const y = (i - x) / cols;
+    let n = 0;
+    for (const j of [x > 0 ? i - 1 : -1, x < cols - 1 ? i + 1 : -1, y > 0 ? i - cols : -1, y < rows - 1 ? i + cols : -1]) {
+      if (j >= 0 && s.cells[j] === v && !reach[j]) n++;
+    }
+    return n;
+  };
+  const candidates = visibleLegal
     .map((i) => {
       const c = s.cells[i];
       const k = soon.get(c);
-      // Seats still needed for that colour's next vehicle, minus what's already benched.
-      const need = k ? Math.max(0, CAP - benchedOf(c)) : 0;
-      return { i, score: k ? (need > 0 ? 10 - k : 2) : 0 };
+      const held = benchedOf(c);
+      const useful = k && held < CAP ? 10 - k + (held > 0 ? 1 : 0) : 0;
+      const open = seats > 0 ? unblocks(i) * 6 : 0;
+      return { i, score: useful + open, k: k ?? 99 };
     })
     .sort((a, b) => b.score - a.score);
   const best = candidates[0];
-  if (best && (best.score >= 8 || free > p.reserve)) {
-    const top = candidates.filter((c) => c.score === best.score).map((c) => c.i);
-    return bestFreeing(s, top, rng);
+  if (best && best.score > 0) {
+    const k = best.k;
+    const opens = unblocks(best.i) > 0;
+    const safe = free > p.reserve || (free >= 1 && (k === 1 || opens));
+    if (safe) {
+      const top = candidates.filter((c) => c.score === best.score).map((c) => c.i);
+      return bestFreeing(s, top, rng);
+    }
   }
-  // Nothing sensible is visible: open up a hidden row if we can, else take the least bad option.
+  // Nothing sensible is visible: open up a hidden row if the bench can take it.
   const hidden = legal.filter((i) => !isVisible(s, i));
   if (hidden.length && free > p.reserve) return rng.pick(hidden);
-  if (best) return best.i;
+  // Forced: take whatever is least bad (soonest colour, else anything).
+  if (best && best.score > 0) return best.i;
   return rng.pick(legal);
 }
 
@@ -102,7 +129,7 @@ function bestFreeing(s: JamState, cells: number[], rng: Rng): number {
 
 export interface Difficulty {
   winRate: number;
-  /** Share of losses that happened with most critters already boarded. */
+  /** Share of losses that came in the second half of the level. */
   nearMissRate: number;
   avgMoves: number;
 }
@@ -115,7 +142,7 @@ export function measure(def: LevelDef, profile: BotProfile, runs = 200, seed = 1
   for (let i = 0; i < runs; i++) {
     const r = playOnce(def, profile, rng);
     if (r.won) wins++;
-    else if (r.progress >= 0.7) near++;
+    else if (r.progress >= 0.55) near++;
     moves += r.moves;
   }
   return { winRate: wins / runs, nearMissRate: runs - wins ? near / (runs - wins) : 0, avgMoves: moves / runs };

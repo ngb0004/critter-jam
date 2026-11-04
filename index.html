@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#a9ddff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Critter Jam</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="game"></canvas>
+      <div id="hud" class="hidden">
+        <div class="hud-top">
+          <div id="level" class="pill">Level 1</div>
+          <div id="coins" class="pill">🪙 0</div>
+        </div>
+        <div class="hud-mid">
+          <div id="vehicles" class="pill"></div>
+        </div>
+        <div id="bench" class="bench"></div>
+        <div id="toast" class="toast"></div>
+      </div>
+      <div id="overlay"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

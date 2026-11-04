@@ -92,7 +92,7 @@ describe('solver and bot', () => {
 
   it('careful play beats casual play', () => {
     const rng = new Rng(3);
-    const def = randomLevel(1, { cols: 6, rows: 8, colors: 4, vehiclesPerColor: 3, benchSlots: 5, visibleRows: 8, blocked: 0, clumping: 0.5 }, rng);
+    const def = randomLevel(1, { cols: 6, rows: 8, colors: 4, vehiclesPerColor: 3, benchSlots: 5, visibleRows: 8, blocked: 0, clumping: 0.5, temperature: 0.5 }, rng);
     if (!solve(def).solvable) return;
     const a = measure(def, CAREFUL, 100);
     const b = measure(def, CASUAL, 100);
