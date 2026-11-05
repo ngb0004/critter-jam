@@ -41,6 +41,8 @@ const benchEl = $('bench');
 const toastEl = $('toast');
 const chainEl = $('chain');
 const feverEl = $('fever');
+const hintEl = $('hint');
+const confettiEl = $('confetti');
 const feverFill = feverEl.querySelector<HTMLElement>('.fever-fill')!;
 
 const params = new URLSearchParams(location.search);
@@ -121,6 +123,9 @@ function startLevel(id: number): void {
   getScene().load(state);
   updateHud();
   toast(`Level ${id}`);
+  if (id === 1) window.setTimeout(() => hint('tap', `Tap a glowing ${skinName === 'gems' ? 'gem' : 'critter'} that matches the ${skinName === 'gems' ? 'cart' : 'bus'} 👆`, 6), 1200);
+  if (id === 2) window.setTimeout(() => hint('blocked', 'Pieces behind others can’t move yet. Clear a path!', 5), 1200);
+  if (id === 3) window.setTimeout(() => hint('plan', 'Peek at the next cart and plan ahead 👀', 5), 1200);
 }
 
 function handleTap(cell: number): void {
@@ -293,6 +298,8 @@ function handleEvents(events: MoveEvent[]): void {
       }
       case 'bench':
         sfx.bench();
+        hint('tray', `Other colours wait on the tray. Don’t let it fill up!`, 4);
+        if (state!.bench.length >= state!.def.benchSlots - 1) hint('danger', 'One slot left! Find a match 😬', 3);
         break;
       case 'benchBoard':
         sfx.board(0);
@@ -318,6 +325,7 @@ function handleEvents(events: MoveEvent[]): void {
         haptic(12);
         break;
       case 'won': {
+        hideHint();
         // Let the last hop, or the whole avalanche, play out first.
         later(finishWin, Math.max(0.9, scene!.busyUntil - scene!.clock + 0.7));
         break;
@@ -358,6 +366,36 @@ function hex(c: number | null): string {
   return c === null ? '#ccc' : '#' + COLORS[c].toString(16).padStart(6, '0');
 }
 
+// ----------------------------------------------------------------- hints
+
+let hintTimer = 0;
+const hintsShown = new Set<string>();
+/** First-time hints: shown once each, only in the first few levels, in the moment they apply. */
+function hint(key: string, text: string, seconds = 4): void {
+  if (levelId > 4 || hintsShown.has(key)) return;
+  hintsShown.add(key);
+  hintEl.innerHTML = `<span>${text}</span>`;
+  hintEl.classList.remove('hidden');
+  window.clearTimeout(hintTimer);
+  hintTimer = window.setTimeout(() => hintEl.classList.add('hidden'), seconds * 1000);
+}
+
+function hideHint(): void {
+  hintEl.classList.add('hidden');
+}
+
+function celebrate(): void {
+  const colours = ['#ff4d6d', '#3d9bff', '#3ed66a', '#ffc93c', '#b56cff', '#ff8a3d', '#ffffff'];
+  confettiEl.innerHTML = Array.from({ length: 70 }, (_, i) => {
+    const left = Math.random() * 100;
+    const dur = 1.8 + Math.random() * 1.4;
+    const delay = Math.random() * 0.5;
+    const c = colours[i % colours.length];
+    return `<i style="left:${left}%;background:${c};animation-duration:${dur}s;animation-delay:${delay}s;transform:rotate(${Math.random() * 360}deg)"></i>`;
+  }).join('');
+  window.setTimeout(() => (confettiEl.innerHTML = ''), 4000);
+}
+
 function toast(text: string): void {
   toastEl.textContent = text;
   toastEl.classList.remove('show');
@@ -386,6 +424,7 @@ function finishWin(): void {
   writeSave(save);
   sfx.win();
   haptic(30);
+  celebrate();
   overlay.innerHTML = `
     <div class="screen center">
       <div class="card pop">

@@ -70,6 +70,14 @@ html, body { margin: 0; height: 100%; background: #1a2a3a; overflow: hidden; tou
 .offer > div { flex: 1; }
 .offer .btn { padding: 10px 14px; font-size: 16px; }
 
+/* ---------------------------------------------------------------- hints */
+.hint { position: absolute; left: 20px; right: 20px; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 112px); text-align: center; pointer-events: none; }
+.hint span { display: inline-block; background: rgba(255, 250, 240, 0.96); color: var(--ink); font-weight: 900; font-size: 16px; padding: 10px 16px; border-radius: 16px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2); animation: hintin 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes hintin { from { transform: translateY(14px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+.confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.confetti i { position: absolute; top: -12px; width: 10px; height: 14px; border-radius: 2px; animation: fall linear forwards; }
+@keyframes fall { to { transform: translateY(110vh) rotate(720deg); opacity: 0.9; } }
+
 /* ---------------------------------------------------------------- fever */
 .fever { position: absolute; top: calc(max(10px, env(safe-area-inset-top)) + 92px); left: 50%; width: 150px; margin-left: -75px; height: 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); border: 2px solid rgba(255, 255, 255, 0.5); overflow: hidden; }
 .fever-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffb13d, #ff5a5a, #ff2ea6); transition: width 0.25s; }
