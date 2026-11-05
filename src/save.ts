@@ -11,13 +11,15 @@ export interface SaveData {
   sound: boolean;
   /** Levels completed, for stats. */
   wins: number;
+  /** Has the player seen the how-to-play card. */
+  seenHowTo: boolean;
   boosters: { undo: number; magnet: number; shuffle: number };
 }
 
 const KEY = 'critter-jam.save.v1';
 
 export function freshSave(): SaveData {
-  return { version: 1, level: 1, coins: 300, streak: 0, lastDay: '', freezes: 1, sound: true, wins: 0, boosters: { undo: 3, magnet: 1, shuffle: 1 } };
+  return { version: 1, level: 1, coins: 300, streak: 0, lastDay: '', freezes: 1, sound: true, wins: 0, seenHowTo: false, boosters: { undo: 3, magnet: 1, shuffle: 1 } };
 }
 
 export function loadSave(): SaveData {

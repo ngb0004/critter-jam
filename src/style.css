@@ -103,5 +103,9 @@ html, body { margin: 0; height: 100%; background: #1a2a3a; overflow: hidden; tou
 .shop { display: flex; align-items: center; gap: 12px; }
 .shop .ic { font-size: 34px; }
 .shop > div { flex: 1; }
+.howto { gap: 12px; }
+.howto .step { display: flex; gap: 12px; align-items: flex-start; }
+.howto .step span { font-size: 26px; line-height: 1.1; }
+.howto .step p { margin: 0; font-weight: 700; line-height: 1.35; }
 .gift { text-align: center; font-weight: 900; margin: 0; color: #2f8a24; }
 .gift small { color: var(--muted); font-size: 13px; }

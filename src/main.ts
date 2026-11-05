@@ -144,7 +144,36 @@ function handleTap(cell: number): void {
   scene!.play(state, events);
   handleEvents(events);
   updateHud();
+  checkStuck();
 }
+
+/** Safety net: a game in play with nothing tappable must end, never just sit there. */
+function checkStuck(): void {
+  if (!state || state.status !== 'playing') return;
+  for (let i = 0; i < state.cells.length; i++) if (canTap(state, i)) return;
+  state.status = 'lost';
+  later(showLost, Math.max(0.6, scene!.busyUntil - scene!.clock + 0.3));
+}
+
+function showHowTo(then: () => void): void {
+  const g = skinName === 'gems';
+  const piece = g ? 'gem' : 'critter';
+  const cart = g ? 'cart' : 'bus';
+  screen = 'shop';
+  overlay.innerHTML = `
+    <div class="screen center dim">
+      <div class="card pop howto">
+        <h2>How to play</h2>
+        <div class="step"><span>👆</span><p>Tap a glowing ${piece}. It walks out and hops onto the ${cart} if the colours match.</p></div>
+        <div class="step"><span>🧱</span><p>Only ${piece}s with a clear path to the front can move. Clear a way for the ones behind.</p></div>
+        <div class="step"><span>⏳</span><p>Wrong colours wait on the tray. Fill every slot and you're stuck!</p></div>
+        <div class="step"><span>🔥</span><p>Board three in a row to start a chain: ready ${g ? 'carts' : 'buses'} then fill themselves. That's an <b>avalanche</b>.</p></div>
+        <button class="btn primary" data-act="howto-ok">Let's go! ▶</button>
+      </div>
+    </div>`;
+  howToThen = then;
+}
+let howToThen: (() => void) | null = null;
 
 // -------------------------------------------------------------- boosters
 
@@ -513,6 +542,7 @@ function showHome(): void {
         <button class="btn primary big-btn" data-act="play" data-level="${next}">Play ▶</button>
       </div>
       <div class="row">
+        <button class="toggle" data-act="howto">How to play</button>
         <button class="toggle" data-act="sound">Sound: ${save.sound ? 'on' : 'off'}</button>
         ${next > 1 ? `<button class="toggle" data-act="replay">Replay a level</button>` : ''}
       </div>
@@ -554,8 +584,22 @@ overlay.addEventListener('click', (e) => {
   if (!el) return;
   sfx.unlock();
   switch (el.dataset.act) {
-    case 'play':
-      startLevel(Number(el.dataset.level) || save.level);
+    case 'play': {
+      const lv = Number(el.dataset.level) || save.level;
+      if (!save.seenHowTo) {
+        save.seenHowTo = true;
+        writeSave(save);
+        showHowTo(() => startLevel(lv));
+      } else startLevel(lv);
+      break;
+    }
+    case 'howto-ok':
+      overlay.innerHTML = '';
+      howToThen?.();
+      howToThen = null;
+      break;
+    case 'howto':
+      showHowTo(() => showHome());
       break;
     case 'next':
       startLevel(levelId + 1);
