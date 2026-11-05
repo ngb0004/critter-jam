@@ -265,7 +265,7 @@ function bumpChain(events: MoveEvent[]): void {
   for (const e of events) {
     if (e.type === 'bench') chain = 0;
     if (e.type === 'board' || e.type === 'pull') {
-      chain++;
+      chain = state ? state.chain : chain + 1; // the sim keeps the chain; avalanches need it
       if (chain >= 3) {
         const hot = chain >= 6;
         chainEl.textContent = hot ? `🔥 CHAIN ×${chain}!` : `Chain ×${chain}`;

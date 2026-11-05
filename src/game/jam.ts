@@ -51,7 +51,12 @@ export interface JamState {
   run: number;
   /** Fever: while set, every boarding tap also pulls the collector's remaining mates from anywhere. */
   fever: boolean;
+  /** Consecutive direct boardings without benching. Avalanches need a chain going. */
+  chain: number;
 }
+
+/** Chain length from which collectors start filling themselves. */
+export const AVALANCHE_CHAIN = 3;
 
 export type MoveEvent =
   | { type: 'board'; cell: number; color: Color }
@@ -70,7 +75,7 @@ export function newState(def: LevelDef): JamState {
   const cells = Int8Array.from(def.cells);
   // Prisms live on the board as WILD so every rule sees them as "any colour".
   for (const [cell, kind] of Object.entries(def.specials ?? {})) if (kind === 'prism') cells[Number(cell)] = WILD;
-  const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing', run: 0, fever: false };
+  const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing', run: 0, fever: false, chain: 0 };
   return st;
 }
 
@@ -176,8 +181,8 @@ function settle(s: JamState, events?: MoveEvent[]): void {
       }
     }
     if (took) events?.push({ type: 'benchBoard', color: v, n: took });
-    if (s.fill < CAP && arrived) {
-      // Avalanche: the colour is already fully reachable, so the collector helps itself.
+    if (s.fill < CAP && arrived && s.chain >= AVALANCHE_CHAIN) {
+      // Avalanche: on a chain, a collector whose colour is already fully reachable helps itself.
       const need = CAP - s.fill;
       const ready = readyCells(s, v);
       if (ready.length >= need) {
@@ -222,11 +227,13 @@ export function tap(s: JamState, cell: number, events: MoveEvent[] = []): MoveEv
   if (fits(color, v) && s.fill < CAP) {
     s.fill++;
     s.boarded++;
+    s.chain++;
     events.push({ type: 'board', cell, color });
     // A magnet piece (or Fever) drags the collector's remaining mates straight out of the yard.
     if (s.def.specials?.[cell] === 'magnet' || s.fever) pull(s, v, CAP - s.fill, events);
   } else {
     s.bench.push(color);
+    s.chain = 0;
     events.push({ type: 'bench', cell, color });
     if (s.bench.length >= s.def.benchSlots) {
       // Full bench: the next vehicle may still rescue it, so settle first.
@@ -265,6 +272,7 @@ export function magnet(s: JamState, events: MoveEvent[] = []): MoveEvent[] | nul
   pull(s, v, CAP - s.fill, events);
   if (s.fill === before) return null;
   s.moves++;
+  s.chain += s.fill - before;
   settle(s, events);
   return events;
 }
