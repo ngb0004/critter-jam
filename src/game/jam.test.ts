@@ -37,12 +37,12 @@ describe('rules', () => {
     tap(s, 0);
     tap(s, 1);
     expect(s.fill).toBe(2);
-    tap(s, 4); // last red: vehicle departs; blue arrives and takes the benched blue
-    expect(s.vehicleIdx).toBe(1);
+    // Last red: the cart departs; blue arrives, takes the benched blue, and finds the
+    // other two blues reachable, so it fills itself (an avalanche) and the level is won.
+    const ev = tap(s, 4)!;
+    expect(ev.some((e) => e.type === 'benchBoard')).toBe(true);
+    expect(ev.some((e) => e.type === 'cascade')).toBe(true);
     expect(s.bench).toEqual([]);
-    expect(s.fill).toBe(1);
-    tap(s, 3);
-    tap(s, 5);
     expect(s.status).toBe('won');
     expect(s.boarded).toBe(CAP * 2);
   });
@@ -67,7 +67,7 @@ describe('solver and bot', () => {
   it('solves the tiny level and the bot wins it', () => {
     const r = solve(tiny);
     expect(r.solvable).toBe(true);
-    expect(r.path.length).toBe(6);
+    expect(r.path.length).toBeLessThanOrEqual(6); // avalanches shorten the winning line
     expect(playOnce(tiny, CAREFUL, new Rng(1)).won).toBe(true);
   });
 
@@ -100,6 +100,39 @@ describe('solver and bot', () => {
   });
 });
 
+describe('avalanches', () => {
+  it('a collector fills itself when its colour is already reachable, and runs chain', () => {
+    // Front row: blue blue blue, then green green green behind an open front: after the red
+    // cart goes, blue and green are both ready, so two carts fill themselves in a row.
+    const def: LevelDef = {
+      id: 7,
+      cols: 3,
+      rows: 3,
+      cells: [0, 0, 0, 1, 1, 1, 2, 2, 2],
+      vehicles: [0, 1, 2],
+      benchSlots: 3,
+      visibleRows: 3,
+    };
+    const s = newState(def);
+    tap(s, 0);
+    tap(s, 1);
+    const ev = tap(s, 2)!;
+    const cascades = ev.filter((e) => e.type === 'cascade');
+    expect(cascades.length).toBe(2);
+    expect(s.status).toBe('won');
+    expect(s.run).toBe(2);
+  });
+
+  it('does not fire when only part of the colour is reachable', () => {
+    const def: LevelDef = { id: 8, cols: 3, rows: 2, cells: [0, 0, 1, 0, 1, 1], vehicles: [0, 1], benchSlots: 3, visibleRows: 2 };
+    const s = newState(def);
+    tap(s, 0);
+    tap(s, 1);
+    const ev = tap(s, 3)!; // red cart leaves; blue has only two reachable (2 and 4), not three
+    expect(ev.some((e) => e.type === 'cascade')).toBe(false);
+  });
+});
+
 describe('specials and boosters', () => {
   const base: LevelDef = { id: 9, cols: 3, rows: 2, cells: [0, 0, 1, 1, 0, 1], vehicles: [0, 1], benchSlots: 3, visibleRows: 2 };
 
@@ -123,14 +156,14 @@ describe('specials and boosters', () => {
     const s = newState(def);
     const ev = tap(s, 0)!;
     expect(ev.filter((e) => e.type === 'pull').length).toBe(2);
-    expect(s.vehicleIdx).toBe(1); // red cart filled and left in one tap
+    expect(s.vehicleIdx).toBeGreaterThanOrEqual(1); // red cart filled and left in one tap (blue may avalanche after)
   });
 
   it('the magnet booster fills the current collector', () => {
     const s = newState(base);
     const ev = magnet(s)!;
     expect(ev.filter((e) => e.type === 'pull').length).toBe(3);
-    expect(s.vehicleIdx).toBe(1);
+    expect(s.vehicleIdx).toBeGreaterThanOrEqual(1);
   });
 
   it('shuffle keeps the colours and the piece count', () => {

@@ -465,6 +465,20 @@ export class JamScene {
           this.cursor = at + 0.12;
           break;
         }
+        case 'cascade': {
+          // Avalanche: the ready pieces rush out together, each a beat behind the last, faster every run.
+          const v = this.vehicles.find((v) => !v.gone && v.color === e.color && this.seatCount(v) < CAP) ?? this.vehicles.find((v) => !v.gone)!;
+          const pace = Math.max(0.05, 0.12 - e.run * 0.015);
+          e.cells.forEach((cell, i) => {
+            const a = this.yardActor(cell);
+            const path = this.exitPath(a.cell, s);
+            this.boardSeat(a, v);
+            this.travel(a, path, at + i * pace, 1.1);
+          });
+          this.cursor = at + e.cells.length * pace + 0.05;
+          this.bump = Math.max(this.bump, 0.35 + e.run * 0.15);
+          break;
+        }
         case 'bench': {
           const a = this.yardActor(e.cell);
           const path = this.exitPath(a.cell, s);
@@ -638,8 +652,9 @@ export class JamScene {
     if (!this.def) return;
     const dt = 1 / 60;
     const gems = this.skin.name === 'gems';
-    this.bump = Math.max(0, this.bump - dt * 6);
-    this.camera.position.x = Math.sin(t * 60) * this.bump * 0.08;
+    this.bump = Math.max(0, this.bump - dt * 4);
+    this.camera.position.x = Math.sin(t * 60) * this.bump * 0.06;
+    this.camera.position.y += Math.sin(t * 47) * this.bump * 0.02;
 
     for (const v of this.vehicles) {
       if (v.gone && v.lidT < 1 && t >= v.t0 - 0.25) v.lidT = Math.min(1, v.lidT + dt * 4);

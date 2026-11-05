@@ -47,6 +47,8 @@ export interface JamState {
   moves: number;
   boarded: number;
   status: Status;
+  /** Collectors filled automatically in a row during the current tap. */
+  run: number;
 }
 
 export type MoveEvent =
@@ -55,6 +57,8 @@ export type MoveEvent =
   | { type: 'pull'; cell: number; color: Color }
   | { type: 'bench'; cell: number; color: Color }
   | { type: 'benchBoard'; color: Color; n: number }
+  /** An avalanche: a collector arrived to find its colour ready and filled itself. */
+  | { type: 'cascade'; cells: number[]; color: Color; run: number }
   | { type: 'depart'; color: Color }
   | { type: 'arrive'; color: Color }
   | { type: 'won' }
@@ -64,7 +68,7 @@ export function newState(def: LevelDef): JamState {
   const cells = Int8Array.from(def.cells);
   // Prisms live on the board as WILD so every rule sees them as "any colour".
   for (const [cell, kind] of Object.entries(def.specials ?? {})) if (kind === 'prism') cells[Number(cell)] = WILD;
-  const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing' };
+  const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing', run: 0 };
   return st;
 }
 
@@ -141,6 +145,7 @@ export function isVisible(s: JamState, cell: number): boolean {
 
 /** Board critters from the bench onto the current vehicle, cycling vehicles as they fill. */
 function settle(s: JamState, events?: MoveEvent[]): void {
+  let arrived = false;
   for (;;) {
     const v = currentVehicle(s);
     if (v === null) {
@@ -154,6 +159,7 @@ function settle(s: JamState, events?: MoveEvent[]): void {
       events?.push({ type: 'depart', color: v });
       const nv = currentVehicle(s);
       if (nv !== null) events?.push({ type: 'arrive', color: nv });
+      arrived = true;
       continue;
     }
     let took = 0;
@@ -168,8 +174,34 @@ function settle(s: JamState, events?: MoveEvent[]): void {
       }
     }
     if (took) events?.push({ type: 'benchBoard', color: v, n: took });
+    if (s.fill < CAP && arrived) {
+      // Avalanche: the colour is already fully reachable, so the collector helps itself.
+      const need = CAP - s.fill;
+      const ready = readyCells(s, v);
+      if (ready.length >= need) {
+        const cells = ready.slice(0, need);
+        for (const c of cells) {
+          s.cells[c] = EMPTY;
+          s.fill++;
+          s.boarded++;
+        }
+        s.run++;
+        events?.push({ type: 'cascade', cells, color: v, run: s.run });
+      }
+    }
     if (s.fill < CAP) return;
+    arrived = false;
   }
+}
+
+/** Reachable pieces that fit collector colour `v`, exact colour before prisms, nearest the front first. */
+function readyCells(s: JamState, v: Color): number[] {
+  const reach = reachable(s);
+  const cols = s.def.cols;
+  const out: number[] = [];
+  for (let i = 0; i < reach.length; i++) if (reach[i] && fits(s.cells[i], v)) out.push(i);
+  out.sort((a, b) => (s.cells[a] === WILD ? 1 : 0) - (s.cells[b] === WILD ? 1 : 0) || Math.floor(a / cols) - Math.floor(b / cols));
+  return out;
 }
 
 /** Can this cell be tapped right now? */
@@ -183,6 +215,7 @@ export function tap(s: JamState, cell: number, events: MoveEvent[] = []): MoveEv
   const color = s.cells[cell];
   s.cells[cell] = EMPTY;
   s.moves++;
+  s.run = 0;
   const v = currentVehicle(s)!;
   if (fits(color, v) && s.fill < CAP) {
     s.fill++;
@@ -226,6 +259,7 @@ export function magnet(s: JamState, events: MoveEvent[] = []): MoveEvent[] | nul
   if (s.status !== 'playing') return null;
   const v = currentVehicle(s)!;
   const before = s.fill;
+  s.run = 0;
   pull(s, v, CAP - s.fill, events);
   if (s.fill === before) return null;
   s.moves++;

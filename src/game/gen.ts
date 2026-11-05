@@ -143,13 +143,23 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
   for (let t = 0; t < tries; t++) {
     const p = paramsFor(level, rng);
     // Nudge the bite: harder targets get fewer bench slots or more shuffling.
+    // Avalanches make generous boards easy, so the hard ones lean on awkward
+    // bus order, hidden rows and a tighter tray.
+    if (target < 0.7) {
+      p.clumping = Math.max(0.1, p.clumping - 0.2);
+      p.temperature += 0.4;
+    }
     if (target < 0.6) {
-      p.clumping = Math.max(0.1, p.clumping - 0.25);
+      p.clumping = Math.max(0.1, p.clumping - 0.2);
       p.temperature += 0.5;
     }
-    if (target < 0.4) p.temperature += 0.8;
+    if (target < 0.4) {
+      p.temperature += 0.9;
+      if (level >= 20) p.benchSlots = Math.max(5, p.benchSlots - 1);
+    }
     // From level 10 on, the hard ones also hide more of the yard.
-    if (target < 0.55 && level >= 10) p.visibleRows = Math.min(p.visibleRows, 4);
+    if (target < 0.7 && level >= 10) p.visibleRows = Math.min(p.visibleRows, 4);
+    if (target < 0.4 && level >= 20) p.visibleRows = Math.min(p.visibleRows, 3);
     if (target > 0.9) {
       p.clumping = Math.min(0.95, p.clumping + 0.15);
       p.temperature = Math.max(0, p.temperature - 0.3);

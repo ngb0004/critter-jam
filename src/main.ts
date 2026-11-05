@@ -210,6 +210,7 @@ function showShop(kind: Booster): void {
 }
 
 function bumpChain(events: MoveEvent[]): void {
+  if (events.some((e) => e.type === 'cascade')) return; // the avalanche text takes the stage
   for (const e of events) {
     if (e.type === 'bench') chain = 0;
     if (e.type === 'board' || e.type === 'pull') {
@@ -250,6 +251,22 @@ function handleEvents(events: MoveEvent[]): void {
       case 'benchBoard':
         sfx.board(0);
         break;
+      case 'cascade': {
+        // Avalanche: bigger, brighter and higher-pitched with every collector in the run.
+        sfx.cascade(e.run);
+        const v = scene!.vehicleSpot();
+        scene!.burst(v.x, v.z, COLORS[e.color] ?? 0xffffff, 10 + e.run * 6);
+        haptic(10 + e.run * 8);
+        chainEl.textContent = e.run === 1 ? '✨ Avalanche!' : `✨ AVALANCHE ×${e.run}!`;
+        chainEl.className = `chain show${e.run >= 2 ? ' hot' : ''}`;
+        if (e.run >= 2) {
+          const bonus = e.run * 5;
+          save.coins += bonus;
+          writeSave(save);
+          toast(`+${bonus} 🪙`);
+        }
+        break;
+      }
       case 'depart':
         sfx.depart();
         haptic(12);
