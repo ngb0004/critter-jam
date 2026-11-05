@@ -4,14 +4,17 @@ const { open, installLayer, setCaption, setCount, endCard, Frames, encode } = re
 
 const out = process.argv[2];
 const quick = process.argv.includes('--quick');
+// --skin critters films the animals-and-buses look; the output file name carries the skin.
+const skin = process.argv.includes('--skin') ? process.argv[process.argv.indexOf('--skin') + 1] : 'gems';
+const q = (lv) => `http://localhost:4191/critter-jam/?level=${lv}&capture${skin === 'gems' ? '' : `&skin=${skin}`}`;
 const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
 
 (async () => {
-  const { browser, page } = await open(`http://localhost:4191/critter-jam/?level=${level}&capture`, { dpr: quick ? 1 : 3 });
+  const { browser, page } = await open(q(level), { dpr: quick ? 1 : 3 });
   // Scout: play levels silently (no frames drawn) and pick one with a real set-up
   // before its first big avalanche, so the clip has a build-up and a payoff.
   const scout = async (lv) => {
-    await page.goto(`http://localhost:4191/critter-jam/?level=${lv}&capture`);
+    await page.goto(q(lv));
     await page.waitForTimeout(500);
     return page.evaluate(() => {
       const j = window.__jam;
@@ -45,10 +48,10 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
     if (score > best.score) best = { lv, score };
   }
   console.log('recording level', best.lv);
-  await page.goto(`http://localhost:4191/critter-jam/?level=${best.lv}&capture`);
+  await page.goto(q(best.lv));
   await page.waitForTimeout(800);
   await installLayer(page);
-  const frames = new Frames(path.join(out, 'avalanche-frames'));
+  const frames = new Frames(path.join(out, `avalanche-${skin}-frames`));
   // The player: match when possible, otherwise clear the blocker in front of the needed colour.
   const step = () =>
     page.evaluate(() => {
@@ -110,6 +113,6 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
   await endCard(page, `<div class="em">💎🚂</div><h1>Gem Jam</h1><p>Set up the avalanche.<br>How far can you go?</p><div class="cta">Play free ▶</div>`);
   await frames.shoot(page, 75);
   await browser.close();
-  encode(frames.dir, path.join(out, 'ad-gem-avalanche.mp4'));
-  console.log('wrote', path.join(out, 'ad-gem-avalanche.mp4'), frames.seconds.toFixed(1) + 's', 'maxRun', maxRun, 'fever', feverSeen);
+  encode(frames.dir, path.join(out, `ad-${skin === 'gems' ? 'gem' : skin}-avalanche.mp4`));
+  console.log('wrote', path.join(out, `ad-${skin === 'gems' ? 'gem' : skin}-avalanche.mp4`), frames.seconds.toFixed(1) + 's', 'maxRun', maxRun, 'fever', feverSeen);
 })();

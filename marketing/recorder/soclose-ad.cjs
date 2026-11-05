@@ -4,10 +4,13 @@ const { open, installLayer, setCaption, setCount, endCard, Frames, encode } = re
 
 const out = process.argv[2];
 const quick = process.argv.includes('--quick');
+// --skin critters films the animals-and-buses look; the output file name carries the skin.
+const skin = process.argv.includes('--skin') ? process.argv[process.argv.indexOf('--skin') + 1] : 'gems';
+const q = (lv) => `http://localhost:4191/critter-jam/?level=${lv}&capture${skin === 'gems' ? '' : `&skin=${skin}`}`;
 const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
 
 (async () => {
-  const { browser, page } = await open(`http://localhost:4191/critter-jam/?level=${level}&capture`, { dpr: quick ? 1 : 3 });
+  const { browser, page } = await open(q(level), { dpr: quick ? 1 : 3 });
   // The player: good play until a few carts remain, then stumbles by benching the wrong
   // colours. Scout levels for one where that stumble ends in a late, believable loss.
   const policy = `
@@ -33,7 +36,7 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
     return { status: t.status, left: t.def.vehicles.length - t.vehicleIdx, total: t.def.vehicles.length, bench: t.bench.length, slots: t.def.benchSlots, progress: t.boarded / t.def.cells.filter((c) => c >= 0).length };`;
   const stepFn = (stumbleAt) => new Function(policy.replace('STUMBLE_AT', String(stumbleAt)));
   const scout = async (lv, stumbleAt) => {
-    await page.goto(`http://localhost:4191/critter-jam/?level=${lv}&capture`);
+    await page.goto(q(lv));
     await page.waitForTimeout(400);
     return page.evaluate(
       ([src, n]) => {
@@ -59,10 +62,10 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
   }
   console.log('recording', JSON.stringify(best));
   const STUMBLE = best.stumbleAt;
-  await page.goto(`http://localhost:4191/critter-jam/?level=${best.lv}&capture`);
+  await page.goto(q(best.lv));
   await page.waitForTimeout(800);
   await installLayer(page);
-  const frames = new Frames(path.join(out, 'soclose-frames'));
+  const frames = new Frames(path.join(out, `soclose-${skin}-frames`));
   const step = () => page.evaluate(([src, n]) => new Function(src.replace('STUMBLE_AT', String(n)))(), [policy, STUMBLE]);
   void stepFn;
 
@@ -95,6 +98,6 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
   await endCard(page, `<div class="em">😩💎</div><h1>Only 3%</h1><p>fill every cart.<br><b>Can you?</b></p><div class="cta">Play free ▶</div>`);
   await frames.shoot(page, 75);
   await browser.close();
-  encode(frames.dir, path.join(out, 'ad-gem-so-close.mp4'));
-  console.log('wrote', path.join(out, 'ad-gem-so-close.mp4'), frames.seconds.toFixed(1) + 's', 'lostAt', lostAt.toFixed(1));
+  encode(frames.dir, path.join(out, `ad-${skin === 'gems' ? 'gem' : skin}-so-close.mp4`));
+  console.log('wrote', path.join(out, `ad-${skin === 'gems' ? 'gem' : skin}-so-close.mp4`), frames.seconds.toFixed(1) + 's', 'lostAt', lostAt.toFixed(1));
 })();
