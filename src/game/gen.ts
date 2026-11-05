@@ -1,5 +1,5 @@
-import { BLOCKED, CAP, EMPTY, LevelDef, validate } from './jam';
-import { BotProfile, CASUAL, measure } from './bot';
+import { BLOCKED, CAP, EMPTY, LevelDef, Special, validate } from './jam';
+import { BotProfile, CAREFUL, CASUAL, measure } from './bot';
 import { solve } from './solver';
 import { Rng } from './rng';
 
@@ -25,6 +25,9 @@ export interface GenParams {
    * convenient colours more often, which is where the difficulty comes from.
    */
   temperature: number;
+  /** Special pieces to place: prisms (wild) and magnets. */
+  prisms: number;
+  magnets: number;
 }
 
 /**
@@ -65,8 +68,9 @@ export function paramsFor(level: number, rng: Rng): GenParams {
   const blockedShare = level < 10 ? 0 : 0.04 + Math.min(1, level / 150) * 0.06;
   const critters = colors * vehiclesPerColor * CAP;
   const cols = Math.min(7, Math.max(5, Math.round(4.5 + t * 2.5)));
-  // Packed from the front: just enough rows for the critters and the scenery.
-  const rows = Math.min(10, Math.ceil((critters * (1 + blockedShare)) / cols));
+  // Packed from the front: just enough rows for the pieces and the scenery.
+  const blocks = Math.round(critters * blockedShare);
+  const rows = Math.min(10, Math.ceil((critters + blocks) / cols));
   return {
     cols,
     rows,
@@ -77,6 +81,9 @@ export function paramsFor(level: number, rng: Rng): GenParams {
     blocked: blockedShare,
     clumping: 0.8 - t * 0.5,
     temperature: 0.3 + Math.min(1, level / 150) * 0.6,
+    // A prism every third level from 6, a magnet piece on the tough ones from 15.
+    prisms: level >= 6 && level % 3 === 0 ? 1 : 0,
+    magnets: level >= 15 && (level % 5 === 0 || level % 10 === 7) ? 1 : 0,
   };
 }
 
@@ -85,7 +92,7 @@ export function randomLevel(id: number, p: GenParams, rng: Rng): LevelDef {
   const cells = new Array<number>(n).fill(EMPTY);
   const critters = p.colors * p.vehiclesPerColor * CAP;
   // Scenery blocks, never in the front row.
-  const blocks = Math.min(Math.round(n * p.blocked), Math.max(0, n - critters));
+  const blocks = Math.min(Math.round(critters * p.blocked), Math.max(0, n - critters));
   for (let b = 0; b < blocks; b++) {
     const i = p.cols + rng.int(n - p.cols);
     if (cells[i] === BLOCKED) continue;
@@ -109,7 +116,8 @@ export function randomLevel(id: number, p: GenParams, rng: Rng): LevelDef {
   spots.forEach((cell, i) => (cells[cell] = painted[i]));
   cleanOpening(cells, p);
   const vehicles = playoutOrder(cells, p, rng);
-  const def: LevelDef = { id, cols: p.cols, rows: p.rows, cells, vehicles, benchSlots: p.benchSlots, visibleRows: p.visibleRows };
+  const specials = placeSpecials(cells, vehicles, p, rng);
+  const def: LevelDef = { id, cols: p.cols, rows: p.rows, cells, vehicles, benchSlots: p.benchSlots, visibleRows: p.visibleRows, ...(specials ? { specials } : {}) };
   const err = validate(def);
   if (err) throw new Error(err);
   return def;
@@ -158,6 +166,9 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
     const sol = solve(def, 150_000);
     if (!sol.solvable) continue;
     const d = measure(def, profile, runs, seed + t);
+    // Quality gate: a careful player must be able to beat every level: at least
+    // half the time on normal levels, and clearly more often than a casual one on walls.
+    if (target < 0.9 && measure(def, CAREFUL, 60, seed + t + 1).winRate < Math.min(0.5, target + 0.1)) continue;
     const cand = { def, ...d };
     // Score: hit the win-rate target, and among those prefer levels whose
     // losses come late (a near miss is what makes "one more go" and the offer work).
@@ -265,4 +276,26 @@ export function cleanOpening(cells: number[], p: GenParams): void {
     cells[slot] = lead;
     have++;
   }
+}
+
+/** Prisms replace a piece that isn't the opening colour; magnets go on a deep piece of a late colour. */
+function placeSpecials(cells: number[], vehicles: number[], p: GenParams, rng: Rng): Record<number, Special> | null {
+  const out: Record<number, Special> = {};
+  const cols = p.cols;
+  const first = vehicles[0];
+  const pick = (ok: (cell: number) => boolean): number => {
+    const opts: number[] = [];
+    for (let i = 0; i < cells.length; i++) if (cells[i] >= 0 && !(i in out) && ok(i)) opts.push(i);
+    return opts.length ? rng.pick(opts) : -1;
+  };
+  for (let k = 0; k < p.prisms; k++) {
+    const i = pick((c) => cells[c] !== first && Math.floor(c / cols) >= 1);
+    if (i >= 0) out[i] = 'prism';
+  }
+  const late = new Set(vehicles.slice(Math.floor(vehicles.length / 2)));
+  for (let k = 0; k < p.magnets; k++) {
+    const i = pick((c) => late.has(cells[c]) && Math.floor(c / cols) >= 2);
+    if (i >= 0) out[i] = 'magnet';
+  }
+  return Object.keys(out).length ? out : null;
 }

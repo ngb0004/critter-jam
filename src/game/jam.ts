@@ -12,8 +12,12 @@
 export const CAP = 3;
 export const EMPTY = -1;
 export const BLOCKED = -2;
+/** A prism: a wild piece that fits any collector. */
+export const WILD = 40;
 
 export type Color = number;
+
+export type Special = 'prism' | 'magnet';
 
 export interface LevelDef {
   id: number;
@@ -26,6 +30,8 @@ export interface LevelDef {
   benchSlots: number;
   /** How many occupied rows from the front show their colours. */
   visibleRows: number;
+  /** Special pieces by cell. A prism is wild; a magnet pulls its two mates in with it. */
+  specials?: Record<number, Special>;
 }
 
 export type Status = 'playing' | 'won' | 'lost';
@@ -45,6 +51,8 @@ export interface JamState {
 
 export type MoveEvent =
   | { type: 'board'; cell: number; color: Color }
+  /** A piece pulled straight from the yard by a magnet (special piece or booster). */
+  | { type: 'pull'; cell: number; color: Color }
   | { type: 'bench'; cell: number; color: Color }
   | { type: 'benchBoard'; color: Color; n: number }
   | { type: 'depart'; color: Color }
@@ -54,8 +62,15 @@ export type MoveEvent =
 
 export function newState(def: LevelDef): JamState {
   const cells = Int8Array.from(def.cells);
+  // Prisms live on the board as WILD so every rule sees them as "any colour".
+  for (const [cell, kind] of Object.entries(def.specials ?? {})) if (kind === 'prism') cells[Number(cell)] = WILD;
   const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing' };
   return st;
+}
+
+/** Does a piece of this colour fit a collector of colour `v`? */
+export function fits(color: number, v: number): boolean {
+  return color === v || color === WILD;
 }
 
 export function cloneState(s: JamState): JamState {
@@ -142,13 +157,15 @@ function settle(s: JamState, events?: MoveEvent[]): void {
       continue;
     }
     let took = 0;
-    for (let i = 0; i < s.bench.length && s.fill < CAP; ) {
-      if (s.bench[i] === v) {
-        s.bench.splice(i, 1);
-        s.fill++;
-        s.boarded++;
-        took++;
-      } else i++;
+    for (const want of [v, WILD]) {
+      for (let i = 0; i < s.bench.length && s.fill < CAP; ) {
+        if (s.bench[i] === want) {
+          s.bench.splice(i, 1);
+          s.fill++;
+          s.boarded++;
+          took++;
+        } else i++;
+      }
     }
     if (took) events?.push({ type: 'benchBoard', color: v, n: took });
     if (s.fill < CAP) return;
@@ -167,10 +184,12 @@ export function tap(s: JamState, cell: number, events: MoveEvent[] = []): MoveEv
   s.cells[cell] = EMPTY;
   s.moves++;
   const v = currentVehicle(s)!;
-  if (color === v && s.fill < CAP) {
+  if (fits(color, v) && s.fill < CAP) {
     s.fill++;
     s.boarded++;
     events.push({ type: 'board', cell, color });
+    // A magnet piece drags the collector's remaining mates straight out of the yard.
+    if (s.def.specials?.[cell] === 'magnet') pull(s, v, CAP - s.fill, events);
   } else {
     s.bench.push(color);
     events.push({ type: 'bench', cell, color });
@@ -188,6 +207,49 @@ export function tap(s: JamState, cell: number, events: MoveEvent[] = []): MoveEv
   return events;
 }
 
+/** Pull up to `n` pieces of colour `v` from anywhere in the yard onto the current collector, deepest first. */
+function pull(s: JamState, v: Color, n: number, events: MoveEvent[]): void {
+  const cols = s.def.cols;
+  const owned: number[] = [];
+  for (let i = 0; i < s.cells.length; i++) if (s.cells[i] === v) owned.push(i);
+  owned.sort((a, b) => Math.floor(b / cols) - Math.floor(a / cols));
+  for (const cell of owned.slice(0, n)) {
+    s.cells[cell] = EMPTY;
+    s.fill++;
+    s.boarded++;
+    events.push({ type: 'pull', cell, color: v });
+  }
+}
+
+/** Magnet booster: fill the current collector from anywhere (yard first, then the bench). Mutates `s`. */
+export function magnet(s: JamState, events: MoveEvent[] = []): MoveEvent[] | null {
+  if (s.status !== 'playing') return null;
+  const v = currentVehicle(s)!;
+  const before = s.fill;
+  pull(s, v, CAP - s.fill, events);
+  if (s.fill === before) return null;
+  s.moves++;
+  settle(s, events);
+  return events;
+}
+
+/**
+ * Shuffle booster: deal the remaining yard pieces into new positions (specials
+ * stay put). The caller checks solvability and may retry with another seed.
+ */
+export function shuffle(s: JamState, rnd: () => number): void {
+  const fixed = new Set(Object.keys(s.def.specials ?? {}).map(Number));
+  const cells: number[] = [];
+  for (let i = 0; i < s.cells.length; i++) if (s.cells[i] >= 0 && !fixed.has(i)) cells.push(i);
+  const colors = cells.map((i) => s.cells[i]);
+  for (let i = colors.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [colors[i], colors[j]] = [colors[j], colors[i]];
+  }
+  cells.forEach((cell, k) => (s.cells[cell] = colors[k]));
+  s.moves++;
+}
+
 /** Add bench capacity (rewarded video / End Game Offer). Lets a lost game continue. */
 export function addBenchSlots(s: JamState, n: number): void {
   s.def = { ...s.def, benchSlots: s.def.benchSlots + n };
@@ -198,11 +260,22 @@ export function addBenchSlots(s: JamState, n: number): void {
 export function validate(def: LevelDef): string | null {
   if (def.cells.length !== def.cols * def.rows) return 'cell count';
   const counts = new Map<number, number>();
-  for (const c of def.cells) if (c >= 0) counts.set(c, (counts.get(c) ?? 0) + 1);
+  let wilds = 0;
+  def.cells.forEach((c, i) => {
+    if (c < 0) return;
+    if (def.specials?.[i] === 'prism') wilds++;
+    else counts.set(c, (counts.get(c) ?? 0) + 1);
+  });
   const need = new Map<number, number>();
   for (const v of def.vehicles) need.set(v, (need.get(v) ?? 0) + CAP);
-  for (const [c, n] of counts) if (need.get(c) !== n) return `colour ${c}: ${n} critters for ${need.get(c) ?? 0} seats`;
-  for (const [c] of need) if (!counts.has(c)) return `colour ${c}: vehicles but no critters`;
+  let short = 0;
+  for (const [c, n] of need) {
+    const have = counts.get(c) ?? 0;
+    if (have > n) return `colour ${c}: ${have} pieces for ${n} seats`;
+    short += n - have;
+  }
+  for (const [c] of counts) if (!need.has(c)) return `colour ${c}: pieces but no collector`;
+  if (short !== wilds) return `${wilds} prisms for ${short} open seats`;
   if (def.benchSlots < 1) return 'bench';
   return null;
 }

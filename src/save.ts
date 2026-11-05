@@ -11,12 +11,13 @@ export interface SaveData {
   sound: boolean;
   /** Levels completed, for stats. */
   wins: number;
+  boosters: { undo: number; magnet: number; shuffle: number };
 }
 
 const KEY = 'critter-jam.save.v1';
 
 export function freshSave(): SaveData {
-  return { version: 1, level: 1, coins: 300, streak: 0, lastDay: '', freezes: 1, sound: true, wins: 0 };
+  return { version: 1, level: 1, coins: 300, streak: 0, lastDay: '', freezes: 1, sound: true, wins: 0, boosters: { undo: 3, magnet: 1, shuffle: 1 } };
 }
 
 export function loadSave(): SaveData {
@@ -25,7 +26,7 @@ export function loadSave(): SaveData {
     if (!raw) return freshSave();
     const data = JSON.parse(raw) as SaveData;
     if (data.version !== 1) return freshSave();
-    return { ...freshSave(), ...data };
+    return { ...freshSave(), ...data, boosters: { ...freshSave().boosters, ...(data.boosters ?? {}) } };
   } catch {
     return freshSave();
   }

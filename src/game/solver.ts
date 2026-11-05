@@ -1,4 +1,4 @@
-import { CAP, JamState, LevelDef, cloneState, currentVehicle, newState, reachable, tap } from './jam';
+import { CAP, JamState, LevelDef, cloneState, currentVehicle, fits, newState, reachable, tap } from './jam';
 
 /**
  * Proves a level solvable (with full information) by depth-first search with
@@ -18,7 +18,12 @@ export interface SolveResult {
 }
 
 export function solve(def: LevelDef, maxNodes = 300_000): SolveResult {
-  const start = newState(def);
+  return solveFrom(newState(def), maxNodes);
+}
+
+/** Same search from a mid-game state (used to keep a shuffle winnable). */
+export function solveFrom(start: JamState, maxNodes = 300_000): SolveResult {
+  const def = start.def;
   const seen = new Set<string>();
   let nodes = 0;
   let gaveUp = false;
@@ -48,7 +53,7 @@ export function solve(def: LevelDef, maxNodes = 300_000): SolveResult {
     const others: number[] = [];
     for (let i = 0; i < reach.length; i++) {
       if (!reach[i]) continue;
-      if (s.cells[i] === v && s.fill < CAP) matching.push(i);
+      if (fits(s.cells[i], v) && s.fill < CAP) matching.push(i);
       else others.push(i);
     }
     let moves = matching.length ? matching : others;
@@ -70,6 +75,6 @@ export function solve(def: LevelDef, maxNodes = 300_000): SolveResult {
     return false;
   };
 
-  const solvable = dfs(start);
+  const solvable = dfs(cloneState(start));
   return { solvable, path: solvable ? path.slice() : [], nodes, gaveUp };
 }

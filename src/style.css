@@ -69,3 +69,21 @@ html, body { margin: 0; height: 100%; background: #1a2a3a; overflow: hidden; tou
 .offer-art { font-size: 30px; }
 .offer > div { flex: 1; }
 .offer .btn { padding: 10px 14px; font-size: 16px; }
+
+/* ------------------------------------------------------------- boosters */
+.boosters { position: absolute; left: 0; right: 0; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 40px); display: flex; justify-content: center; gap: 14px; pointer-events: auto; }
+.booster { position: relative; width: 56px; height: 56px; border: 0; border-radius: 18px; background: rgba(255, 250, 240, 0.95); box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.booster:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2); }
+.booster .n { position: absolute; top: -6px; right: -6px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--green); color: #fff; font-size: 12px; font-weight: 900; display: flex; align-items: center; justify-content: center; padding: 0 5px; box-shadow: 0 2px 0 var(--green-dark); }
+.booster.empty .n { background: var(--accent); box-shadow: 0 2px 0 var(--accent-dark); }
+.booster.empty .n::before { content: '+'; }
+.booster.busy { opacity: 0.5; pointer-events: none; }
+.chain { position: absolute; left: 0; right: 0; top: 27%; text-align: center; font-weight: 900; font-size: 30px; color: #ffe14d; text-shadow: 0 3px 0 rgba(120, 60, 0, 0.5), 0 0 16px rgba(255, 200, 0, 0.5); opacity: 0; pointer-events: none; }
+.chain.show { animation: chain 0.9s ease-out forwards; }
+.chain.hot { font-size: 40px; color: #ff9f43; }
+@keyframes chain { 0% { opacity: 0; transform: scale(0.6); } 20% { opacity: 1; transform: scale(1.15); } 40% { transform: scale(1); } 100% { opacity: 0; transform: translateY(-30px); } }
+.shop { display: flex; align-items: center; gap: 12px; }
+.shop .ic { font-size: 34px; }
+.shop > div { flex: 1; }
+.gift { text-align: center; font-weight: 900; margin: 0; color: #2f8a24; }
+.gift small { color: var(--muted); font-size: 13px; }

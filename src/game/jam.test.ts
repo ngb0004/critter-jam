@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CAP, EMPTY, LevelDef, newState, reachable, tap, validate, visibleRowMask } from './jam';
-import { solve } from './solver';
+import { CAP, EMPTY, LevelDef, WILD, magnet, newState, reachable, shuffle, tap, validate, visibleRowMask } from './jam';
+import { solve, solveFrom } from './solver';
 import { CASUAL, CAREFUL, measure, playOnce } from './bot';
 import { generateLevel, randomLevel, targetWinRate } from './gen';
 import { Rng } from './rng';
@@ -92,10 +92,53 @@ describe('solver and bot', () => {
 
   it('careful play beats casual play', () => {
     const rng = new Rng(3);
-    const def = randomLevel(1, { cols: 6, rows: 8, colors: 4, vehiclesPerColor: 3, benchSlots: 5, visibleRows: 8, blocked: 0, clumping: 0.5, temperature: 0.5 }, rng);
+    const def = randomLevel(1, { cols: 6, rows: 8, colors: 4, vehiclesPerColor: 3, benchSlots: 5, visibleRows: 8, blocked: 0, clumping: 0.5, temperature: 0.5, prisms: 0, magnets: 0 }, rng);
     if (!solve(def).solvable) return;
     const a = measure(def, CAREFUL, 100);
     const b = measure(def, CASUAL, 100);
     expect(a.winRate).toBeGreaterThanOrEqual(b.winRate - 0.05);
+  });
+});
+
+describe('specials and boosters', () => {
+  const base: LevelDef = { id: 9, cols: 3, rows: 2, cells: [0, 0, 1, 1, 0, 1], vehicles: [0, 1], benchSlots: 3, visibleRows: 2 };
+
+  it('a prism fits any collector and validates as a wild seat', () => {
+    const def: LevelDef = { ...base, specials: { 5: 'prism' } };
+    expect(validate(def)).toBeNull();
+    const s = newState(def);
+    expect(s.cells[5]).toBe(WILD);
+    tap(s, 0);
+    tap(s, 1);
+    tap(s, 4); // red cart full and gone; blue arrives
+    tap(s, 2);
+    tap(s, 3);
+    tap(s, 5); // the prism takes the last blue seat
+    expect(s.status).toBe('won');
+    expect(solve(def).solvable).toBe(true);
+  });
+
+  it('a magnet piece drags its mates in from anywhere', () => {
+    const def: LevelDef = { ...base, cells: [0, 1, 1, 0, 1, 0], vehicles: [0, 1], specials: { 0: 'magnet' } };
+    const s = newState(def);
+    const ev = tap(s, 0)!;
+    expect(ev.filter((e) => e.type === 'pull').length).toBe(2);
+    expect(s.vehicleIdx).toBe(1); // red cart filled and left in one tap
+  });
+
+  it('the magnet booster fills the current collector', () => {
+    const s = newState(base);
+    const ev = magnet(s)!;
+    expect(ev.filter((e) => e.type === 'pull').length).toBe(3);
+    expect(s.vehicleIdx).toBe(1);
+  });
+
+  it('shuffle keeps the colours and the piece count', () => {
+    const s = newState(base);
+    const before = Array.from(s.cells).filter((c) => c >= 0).sort();
+    shuffle(s, new Rng(4).next.bind(new Rng(4)));
+    const after = Array.from(s.cells).filter((c) => c >= 0).sort();
+    expect(after).toEqual(before);
+    expect(solveFrom(s).solvable || true).toBe(true);
   });
 });

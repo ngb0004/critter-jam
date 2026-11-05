@@ -1,5 +1,6 @@
 import { haptic, sfx } from './audio';
-import { JamState, LevelDef, MoveEvent, addBenchSlots, canTap, currentVehicle, newState, tap } from './game/jam';
+import { JamState, LevelDef, MoveEvent, addBenchSlots, canTap, cloneState, currentVehicle, fits, magnet, newState, shuffle, tap } from './game/jam';
+import { solveFrom } from './game/solver';
 import { Rng } from './game/rng';
 import { COLORS, JamScene, SKINS, SkinName } from './render3d/scene';
 import { SaveData, loadSave, recordWin, writeSave } from './save';
@@ -9,12 +10,21 @@ import { SaveData, loadSave, recordWin, writeSave } from './save';
  * game/jam.ts and the picture in render3d/scene.ts.
  */
 
-type Screen = 'home' | 'playing' | 'won' | 'lost' | 'ad';
+type Screen = 'home' | 'playing' | 'won' | 'lost' | 'ad' | 'shop';
 
 const OFFER_COINS = 150;
 const OFFER_SLOTS = 2;
 const AD_SLOTS = 1;
 const WIN_COINS = 15;
+/** Boosters: what they cost in coins, and how they're described in the shop. */
+type Booster = 'undo' | 'magnet' | 'shuffle';
+const BOOSTERS: Record<Booster, { cost: number; icon: string; name: string; blurb: string }> = {
+  undo: { cost: 40, icon: '↶', name: 'Undo', blurb: 'Take back your last move.' },
+  magnet: { cost: 120, icon: '🧲', name: 'Magnet', blurb: 'Fill the current cart from anywhere.' },
+  shuffle: { cost: 80, icon: '🔀', name: 'Shuffle', blurb: 'Deal the remaining pieces again.' },
+};
+/** A free booster every few wins keeps the habit going. */
+const GIFT_EVERY = 3;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stage = $('stage');
@@ -26,6 +36,7 @@ const coinsEl = $('coins');
 const vehiclesEl = $('vehicles');
 const benchEl = $('bench');
 const toastEl = $('toast');
+const chainEl = $('chain');
 
 const params = new URLSearchParams(location.search);
 // ?skin=gems|critters picks the look; gems is the default.
@@ -41,6 +52,11 @@ let state: JamState | null = null;
 let screen: Screen = 'home';
 let levelId = 1;
 let offerUsed = false;
+/** Undo history: states before each tap, newest last. */
+let history: JamState[] = [];
+/** Consecutive direct boardings without benching. */
+let chain = 0;
+const shuffleRng = new Rng(Date.now() & 0xffff);
 let cssW = 0;
 let cssH = 0;
 let autoTimer = 0;
@@ -88,6 +104,8 @@ function startLevel(id: number): void {
   levelId = id;
   state = newState(levelDef(id));
   offerUsed = false;
+  history = [];
+  chain = 0;
   screen = 'playing';
   overlay.innerHTML = '';
   hud.classList.remove('hidden');
@@ -106,19 +124,123 @@ function handleTap(cell: number): void {
     }
     return;
   }
+  history.push(cloneState(state));
+  if (history.length > 30) history.shift();
   const events = tap(state, cell)!;
   scene!.play(state, events);
   handleEvents(events);
   updateHud();
 }
 
+// -------------------------------------------------------------- boosters
+
+function useBooster(kind: Booster): void {
+  if (!state || screen !== 'playing') return;
+  if (save.boosters[kind] <= 0) {
+    showShop(kind);
+    return;
+  }
+  let used = false;
+  switch (kind) {
+    case 'undo': {
+      const prev = history.pop();
+      if (!prev) break;
+      state = prev;
+      scene!.load(state);
+      chain = 0;
+      used = true;
+      break;
+    }
+    case 'magnet': {
+      history.push(cloneState(state));
+      const events = magnet(state);
+      if (!events) {
+        history.pop();
+        break;
+      }
+      scene!.play(state, events);
+      handleEvents(events);
+      used = true;
+      break;
+    }
+    case 'shuffle': {
+      // Deal again until the solver says it's still winnable (it nearly always is first time).
+      let dealt: JamState | null = null;
+      for (let i = 0; i < 8 && !dealt; i++) {
+        const trial = cloneState(state);
+        shuffle(trial, () => shuffleRng.next());
+        if (solveFrom(trial, 60_000).solvable) dealt = trial;
+      }
+      if (!dealt) break;
+      history.push(cloneState(state));
+      state = dealt;
+      scene!.load(state);
+      used = true;
+      break;
+    }
+  }
+  if (!used) {
+    sfx.bad();
+    toast(kind === 'undo' ? 'Nothing to undo' : 'No effect');
+    return;
+  }
+  save.boosters[kind]--;
+  writeSave(save);
+  sfx.coin();
+  haptic(12);
+  updateHud();
+}
+
+function showShop(kind: Booster): void {
+  const b = BOOSTERS[kind];
+  const can = save.coins >= b.cost;
+  screen = 'shop';
+  overlay.innerHTML = `
+    <div class="screen center dim">
+      <div class="card pop">
+        <div class="shop">
+          <div class="ic">${b.icon}</div>
+          <div><b>${b.name}</b><div class="muted" style="text-align:left">${b.blurb}</div></div>
+          <button class="btn primary" data-act="buy" data-kind="${kind}" ${can ? '' : 'disabled'}>🪙 ${b.cost}</button>
+        </div>
+        ${can ? '' : `<p class="muted">You have 🪙 ${save.coins}. Win levels to earn more.</p>`}
+        <button class="btn ghost" data-act="close">Close</button>
+      </div>
+    </div>`;
+}
+
+function bumpChain(events: MoveEvent[]): void {
+  for (const e of events) {
+    if (e.type === 'bench') chain = 0;
+    if (e.type === 'board' || e.type === 'pull') {
+      chain++;
+      if (chain >= 3) {
+        const hot = chain >= 6;
+        chainEl.textContent = hot ? `🔥 CHAIN ×${chain}!` : `Chain ×${chain}`;
+        chainEl.className = `chain show${hot ? ' hot' : ''}`;
+        void chainEl.offsetWidth;
+        chainEl.classList.add('show');
+        if (chain === 5 || chain === 10 || chain === 15) {
+          const bonus = chain === 5 ? 5 : chain === 10 ? 15 : 30;
+          save.coins += bonus;
+          writeSave(save);
+          sfx.coin();
+          toast(`+${bonus} 🪙 chain bonus!`);
+        }
+      }
+    }
+  }
+}
+
 function handleEvents(events: MoveEvent[]): void {
+  bumpChain(events);
   for (const e of events) {
     switch (e.type) {
-      case 'board': {
+      case 'board':
+      case 'pull': {
         sfx.board(state!.fill);
         const v = scene!.vehicleSpot();
-        scene!.burst(v.x, v.z, COLORS[e.color]);
+        scene!.burst(v.x, v.z, COLORS[e.color] ?? 0xffffff, e.type === 'pull' ? 14 : 8);
         haptic(6);
         break;
       }
@@ -159,6 +281,12 @@ function updateHud(): void {
   }
   benchEl.innerHTML = slots.join('');
   benchEl.classList.toggle('danger', s.bench.length >= s.def.benchSlots - 1);
+  for (const k of ['undo', 'magnet', 'shuffle'] as Booster[]) {
+    const n = save.boosters[k];
+    const el = document.getElementById('n-' + k)!;
+    el.textContent = n > 0 ? String(n) : '';
+    el.parentElement!.classList.toggle('empty', n <= 0);
+  }
 }
 
 function hex(c: number | null): string {
@@ -182,6 +310,12 @@ function finishWin(): void {
   const coins = WIN_COINS + bonus;
   save.coins += coins;
   save.wins++;
+  // A gift booster every few wins.
+  let gift: Booster | null = null;
+  if (save.wins % GIFT_EVERY === 0) {
+    gift = (['undo', 'magnet', 'shuffle'] as Booster[])[Math.floor(save.wins / GIFT_EVERY) % 3];
+    save.boosters[gift]++;
+  }
   if (levelId >= save.level) save.level = levelId + 1;
   const streak = recordWin(save);
   writeSave(save);
@@ -194,6 +328,7 @@ function finishWin(): void {
         <h2>Level ${levelId} clear!</h2>
         <p class="coins-won">🪙 +${coins}${bonus ? ` <small>(+${bonus} tidy tray)</small>` : ''}</p>
         ${streak.extended ? `<p class="streak">🔥 ${save.streak}-day streak${streak.frozeDay ? ' <small>(freeze used)</small>' : ''}</p>` : ''}
+        ${gift ? `<p class="gift">${BOOSTERS[gift].icon} +1 ${BOOSTERS[gift].name} <small>gift!</small></p>` : ''}
         <button class="btn primary" data-act="next">Next level ▶</button>
         <button class="btn ghost" data-act="home">Home</button>
       </div>
@@ -303,6 +438,13 @@ canvas.addEventListener('pointermove', (e) => {
   scene?.setHighlight(state && cell >= 0 && canTap(state, cell) ? cell : -1);
 });
 
+hud.addEventListener('click', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>('[data-boost]');
+  if (!el) return;
+  sfx.unlock();
+  useBooster(el.dataset.boost as Booster);
+});
+
 overlay.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
   if (!el) return;
@@ -331,6 +473,24 @@ overlay.addEventListener('click', (e) => {
       break;
     case 'ad':
       showFakeAd(() => continueWith(AD_SLOTS));
+      break;
+    case 'buy': {
+      const kind = el.dataset.kind as Booster;
+      if (save.coins >= BOOSTERS[kind].cost) {
+        save.coins -= BOOSTERS[kind].cost;
+        save.boosters[kind]++;
+        writeSave(save);
+        sfx.coin();
+      }
+      overlay.innerHTML = '';
+      screen = 'playing';
+      updateHud();
+      if (save.boosters[kind] > 0) useBooster(kind);
+      break;
+    }
+    case 'close':
+      overlay.innerHTML = '';
+      screen = 'playing';
       break;
     case 'sound':
       save.sound = !save.sound;
@@ -365,7 +525,7 @@ function tick(now: number): void {
     const cells: number[] = [];
     for (let i = 0; i < state.cells.length; i++) if (canTap(state, i)) cells.push(i);
     const v = currentVehicle(state);
-    const match = cells.filter((i) => state!.cells[i] === v);
+    const match = cells.filter((i) => v !== null && fits(state!.cells[i], v));
     const pick = match.length ? match[0] : cells[autoRng.int(cells.length)];
     if (pick !== undefined) handleTap(pick);
   }

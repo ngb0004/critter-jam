@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { BLOCKED, CAP, EMPTY, JamState, LevelDef, MoveEvent, reachable, visibleRowMask } from '../game/jam';
+import { BLOCKED, CAP, EMPTY, JamState, LevelDef, MoveEvent, WILD, reachable, visibleRowMask } from '../game/jam';
 import { blob, colored, easeInOut, hash, popScale, shaded, tint, toyMaterial } from './toy';
 
 /**
@@ -94,6 +94,8 @@ export class JamScene {
   private body!: THREE.InstancedMesh;
   private detail!: THREE.InstancedMesh;
   private rings!: THREE.InstancedMesh;
+  /** Gold halos under magnet pieces. */
+  private halos!: THREE.InstancedMesh;
   private actors: Actor[] = [];
   private vehicles: Vehicle[] = [];
   private pickPlane = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({ visible: false }));
@@ -223,6 +225,14 @@ export class JamScene {
     this.rings.count = 0;
     this.rings.frustumCulled = false;
     g.add(this.rings);
+    this.halos = new THREE.InstancedMesh(
+      new THREE.RingGeometry(0.3, 0.5, 6).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xffd36a, transparent: true, opacity: 0.8, depthWrite: false }),
+      16,
+    );
+    this.halos.count = 0;
+    this.halos.frustumCulled = false;
+    g.add(this.halos);
 
     const mk = (id: number, color: number, p: THREE.Vector3): Actor => ({
       id, color, pos: p.clone(), from: p.clone(), to: p.clone(), path: [], t0: 0, t1: 0, segDur: STEP, arc: 0,
@@ -446,6 +456,15 @@ export class JamScene {
           this.cursor = at + 0.1;
           break;
         }
+        case 'pull': {
+          // Magnet: straight out of the yard and onto the seat, in one big arc.
+          const a = this.yardActor(e.cell);
+          const v = this.vehicles.find((v) => !v.gone && this.seatCount(v) < CAP) ?? this.vehicles.find((v) => !v.gone)!;
+          this.boardSeat(a, v);
+          this.travel(a, [], at, 1.6);
+          this.cursor = at + 0.12;
+          break;
+        }
         case 'bench': {
           const a = this.yardActor(e.cell);
           const path = this.exitPath(a.cell, s);
@@ -582,7 +601,7 @@ export class JamScene {
   }
 
   /** Leave the yard along `path`, then hop to wherever the actor's state says it belongs. */
-  private travel(a: Actor, path: THREE.Vector3[], at: number): void {
+  private travel(a: Actor, path: THREE.Vector3[], at: number, arc = 0.9): void {
     const steps = path.slice();
     let dest: THREE.Vector3 | null = null;
     if (a.state === 'aboard') {
@@ -591,7 +610,7 @@ export class JamScene {
     }
     if (dest) steps.push(dest);
     const walkCount = Math.max(0, steps.length - (dest ? 1 : 0));
-    this.startTrip(a, steps, at, STEP * Math.max(1, walkCount) + (dest ? HOP : 0), dest ? 0.9 : 0.5);
+    this.startTrip(a, steps, at, STEP * Math.max(1, walkCount) + (dest ? HOP * (arc > 1 ? 1.5 : 1) : 0), dest ? arc : 0.5);
     a.state = a.state === 'yard' ? 'moving' : a.state;
   }
 
@@ -634,8 +653,10 @@ export class JamScene {
     }
 
     const cols = this.def.cols;
+    const specials = this.def.specials ?? {};
     let n = 0;
     let nr = 0;
+    let nh = 0;
     for (const a of this.actors) {
       if (a.state === 'gone') continue;
       const travelling = a.path.length > 0 || !a.pos.equals(a.to);
@@ -678,18 +699,31 @@ export class JamScene {
         bob = moving ? Math.abs(Math.sin(t * 22 + a.phase)) * 0.09 : idle + (ready ? Math.abs(Math.sin(t * 5 + a.phase)) * 0.05 : 0);
         squash = moving ? 1 + Math.sin(t * 22 + a.phase) * 0.06 : 1 + idle * 2;
       }
+      const prism = a.color === WILD;
+      const magnet = a.cell >= 0 && specials[a.cell] === 'magnet';
+      if (prism) spin = t * 2.2 + a.phase;
       const face = gems ? spin : a.state === 'yard' && !moving ? 0 : a.facing;
       this.tmp.position.set(a.pos.x, a.pos.y + bob + lift, a.pos.z);
       this.tmp.rotation.set(0, face, moving && !gems ? Math.sin(t * 22 + a.phase) * 0.05 : 0);
       this.tmp.scale.set(a.scale / Math.sqrt(squash), a.scale * squash, a.scale / Math.sqrt(squash));
       this.tmp.updateMatrix();
       this.body.setMatrixAt(n, this.tmp.matrix);
-      this.body.setColorAt(n, this.col.set(hidden ? (gems ? 0xa8a2b8 : 0x9aa0a8) : COLORS[a.color]));
+      if (hidden) this.col.set(gems ? 0xa8a2b8 : 0x9aa0a8);
+      else if (prism) this.col.setHSL((t * 0.25 + a.phase * 0.1) % 1, 0.75, 0.7); // a prism cycles through every colour
+      else this.col.set(COLORS[a.color]);
+      this.body.setColorAt(n, this.col);
       if (hidden) this.tmp.scale.setScalar(0.0001);
       this.tmp.updateMatrix();
       this.detail.setMatrixAt(n, this.tmp.matrix);
       if (gems) this.detail.setColorAt(n, this.col.set(0xffffff));
       n++;
+      if (magnet && !hidden) {
+        this.tmp.position.set(a.pos.x, 0.09, a.pos.z);
+        this.tmp.rotation.set(0, t * 1.5, 0);
+        this.tmp.scale.setScalar(1 + Math.sin(t * 6) * 0.08);
+        this.tmp.updateMatrix();
+        this.halos.setMatrixAt(nh++, this.tmp.matrix);
+      }
       if (ready) {
         this.tmp.position.set(a.pos.x, 0.07, a.pos.z);
         this.tmp.rotation.set(0, 0, 0);
@@ -705,6 +739,8 @@ export class JamScene {
     if (this.detail.instanceColor) this.detail.instanceColor.needsUpdate = true;
     this.rings.count = nr;
     this.rings.instanceMatrix.needsUpdate = true;
+    this.halos.count = nh;
+    this.halos.instanceMatrix.needsUpdate = true;
 
     if (this.highlightCell >= 0 && this.state && this.state.cells[this.highlightCell] >= 0) {
       const p = this.cellPos(this.highlightCell);

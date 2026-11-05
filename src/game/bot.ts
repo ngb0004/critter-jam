@@ -1,4 +1,4 @@
-import { CAP, JamState, LevelDef, currentVehicle, isVisible, newState, reachable, tap } from './jam';
+import { CAP, JamState, LevelDef, currentVehicle, fits, isVisible, newState, reachable, tap } from './jam';
 import { Rng } from './rng';
 
 /**
@@ -53,7 +53,7 @@ function chooseMove(s: JamState, p: BotProfile, rng: Rng, reach: Uint8Array): nu
   const v = currentVehicle(s)!;
   const seats = CAP - s.fill;
   // Board a matching critter if we can see one.
-  const matching = legal.filter((i) => s.cells[i] === v && isVisible(s, i));
+  const matching = legal.filter((i) => fits(s.cells[i], v) && isVisible(s, i));
   if (matching.length && seats > 0) return bestFreeing(s, matching, rng);
 
   // Otherwise bench something useful: a visible critter whose vehicle is coming soon.
