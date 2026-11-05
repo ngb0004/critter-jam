@@ -47,14 +47,15 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
     );
   };
   let best = { lv: level, stumbleAt: 3, score: -1 };
-  for (let lv = level; lv <= level + 12; lv++) {
-    for (const stumbleAt of [3, 4, 5]) {
+  for (let lv = level; lv <= level + 25; lv++) {
+    for (const stumbleAt of [2, 3, 4]) {
       const r = await scout(lv, stumbleAt);
       if (r.status !== 'lost') continue;
-      // A loss late in the level, with plenty of clean play before it.
-      const score = r.progress * 10 + Math.min(r.taps, 25) * 0.3;
+      // A loss as late as possible (one or two carts short is the dream), after plenty of clean play.
+      const score = r.progress * 10 + (r.left <= 2 ? 4 : 0) + Math.min(r.taps, 25) * 0.2;
       if (score > best.score) best = { lv, stumbleAt, score, r };
     }
+    if (best.r && best.r.left <= 2 && best.r.progress >= 0.8) break;
   }
   console.log('recording', JSON.stringify(best));
   const STUMBLE = best.stumbleAt;
