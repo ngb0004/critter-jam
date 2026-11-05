@@ -6,6 +6,7 @@ const out = process.argv[2];
 const quick = process.argv.includes('--quick');
 // --skin critters films the animals-and-buses look; the output file name carries the skin.
 const skin = process.argv.includes('--skin') ? process.argv[process.argv.indexOf('--skin') + 1] : 'gems';
+const W = skin === 'gems' ? { piece: 'gem', cart: 'cart', title: 'Gem Jam', em: '💎🚂', Piece: 'Gem' } : { piece: 'critter', cart: 'bus', title: 'Critter Jam', em: '🐾🚌', Piece: 'Critter' };
 const q = (lv) => `http://localhost:4191/critter-jam/play/?level=${lv}&capture${skin === 'gems' ? '' : `&skin=${skin}`}`;
 const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
 
@@ -83,19 +84,19 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 12);
       nextTapAt = t + (r.left <= STUMBLE ? 0.9 : 0.5);
     }
     const left = last.left;
-    let cap = 'Fill every cart to win 🚂';
+    let cap = `Fill every ${W.cart} to win ${skin === 'gems' ? '🚂' : '🚌'}`;
     if (t > 5 && left > 2) cap = 'Watch the tray… 👀';
-    if (left <= STUMBLE && lostAt < 0) cap = last.bench >= last.slots - 1 ? 'ONE slot left!! 😱' : `Just ${left} cart${left > 1 ? 's' : ''} left!`;
+    if (left <= STUMBLE && lostAt < 0) cap = last.bench >= last.slots - 1 ? 'ONE slot left!! 😱' : `Just ${left} ${W.cart}${left > 1 ? (skin === 'gems' ? 's' : 'es') : ''} left!`;
     if (lostAt >= 0) cap = `NOOO! ${last.total - left}/${last.total} 😭`;
     await setCaption(page, cap);
-    await setCount(page, `🚂 ${last.total ? last.total - left : 0}/${last.total || '?'}`);
+    await setCount(page, `${skin === 'gems' ? '🚂' : '🚌'} ${last.total ? last.total - left : 0}/${last.total || '?'}`);
     await frames.shoot(page);
     await page.evaluate((f) => window.__jam.advance(1, f), fps);
     t += 1 / fps;
     if (lostAt >= 0 && t - lostAt > 2.6) break;
     if (quick && frames.n > 900) break;
   }
-  await endCard(page, `<div class="em">😩💎</div><h1>Only 3%</h1><p>fill every cart.<br><b>Can you?</b></p><div class="cta">Play free ▶</div>`);
+  await endCard(page, `<div class="em">😩${skin === 'gems' ? '💎' : '🐾'}</div><h1>Only 3%</h1><p>fill every ${W.cart}.<br><b>Can you?</b></p><div class="cta">Play free ▶</div>`);
   await frames.shoot(page, 75);
   await browser.close();
   encode(frames.dir, path.join(out, `ad-${skin === 'gems' ? 'gem' : skin}-so-close.mp4`));

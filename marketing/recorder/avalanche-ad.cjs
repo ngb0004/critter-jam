@@ -6,6 +6,7 @@ const out = process.argv[2];
 const quick = process.argv.includes('--quick');
 // --skin critters films the animals-and-buses look; the output file name carries the skin.
 const skin = process.argv.includes('--skin') ? process.argv[process.argv.indexOf('--skin') + 1] : 'gems';
+const W = skin === 'gems' ? { piece: 'gem', cart: 'cart', title: 'Gem Jam', em: '💎🚂', Piece: 'Gem' } : { piece: 'critter', cart: 'bus', title: 'Critter Jam', em: '🐾🚌', Piece: 'Critter' };
 const q = (lv) => `http://localhost:4191/critter-jam/play/?level=${lv}&capture${skin === 'gems' ? '' : `&skin=${skin}`}`;
 const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
 
@@ -85,7 +86,7 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
   let done = false;
   let nextTapAt = 1.2;
   let doneFrames = 0;
-  let caption = 'Match the gem to the cart 💎';
+  let caption = `Match the ${W.piece} to the ${W.cart} ${skin === 'gems' ? '💎' : '🐾'}`;
   while (doneFrames < 36 && frames.seconds < 42) {
     const fps = 30;
     if (!done && t >= nextTapAt) {
@@ -103,14 +104,14 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
     if (done) doneFrames++;
     await setCaption(page, caption);
     const st = await page.evaluate(() => { const s = window.__jam.state; return { left: s.def.vehicles.length - s.vehicleIdx, total: s.def.vehicles.length }; });
-    await setCount(page, `🚂 ${st.total - st.left}/${st.total}`);
+    await setCount(page, `${skin === 'gems' ? '🚂' : '🚌'} ${st.total - st.left}/${st.total}`);
     await frames.shoot(page);
     await page.evaluate((f) => window.__jam.advance(1, f), fps);
     t += 1 / fps;
     if (frames.n % 30 === 0) console.log(`video ${frames.seconds.toFixed(1)}s maxRun ${maxRun} fever ${feverSeen} done ${done}`);
     if (quick && frames.n > 900) break;
   }
-  await endCard(page, `<div class="em">💎🚂</div><h1>Gem Jam</h1><p>Set up the avalanche.<br>How far can you go?</p><div class="cta">Play free ▶</div>`);
+  await endCard(page, `<div class="em">${W.em}</div><h1>${W.title.replace(' ', '<br>')}</h1><p>Set up the avalanche.<br>How far can you go?</p><div class="cta">Play free ▶</div>`);
   await frames.shoot(page, 75);
   await browser.close();
   encode(frames.dir, path.join(out, `ad-${skin === 'gems' ? 'gem' : skin}-avalanche.mp4`));
