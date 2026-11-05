@@ -49,6 +49,8 @@ export interface JamState {
   status: Status;
   /** Collectors filled automatically in a row during the current tap. */
   run: number;
+  /** Fever: while set, every boarding tap also pulls the collector's remaining mates from anywhere. */
+  fever: boolean;
 }
 
 export type MoveEvent =
@@ -68,7 +70,7 @@ export function newState(def: LevelDef): JamState {
   const cells = Int8Array.from(def.cells);
   // Prisms live on the board as WILD so every rule sees them as "any colour".
   for (const [cell, kind] of Object.entries(def.specials ?? {})) if (kind === 'prism') cells[Number(cell)] = WILD;
-  const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing', run: 0 };
+  const st: JamState = { def, cells, bench: [], vehicleIdx: 0, fill: 0, moves: 0, boarded: 0, status: 'playing', run: 0, fever: false };
   return st;
 }
 
@@ -221,8 +223,8 @@ export function tap(s: JamState, cell: number, events: MoveEvent[] = []): MoveEv
     s.fill++;
     s.boarded++;
     events.push({ type: 'board', cell, color });
-    // A magnet piece drags the collector's remaining mates straight out of the yard.
-    if (s.def.specials?.[cell] === 'magnet') pull(s, v, CAP - s.fill, events);
+    // A magnet piece (or Fever) drags the collector's remaining mates straight out of the yard.
+    if (s.def.specials?.[cell] === 'magnet' || s.fever) pull(s, v, CAP - s.fill, events);
   } else {
     s.bench.push(color);
     events.push({ type: 'bench', cell, color });

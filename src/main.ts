@@ -25,6 +25,9 @@ const BOOSTERS: Record<Booster, { cost: number; icon: string; name: string; blur
 };
 /** A free booster every few wins keeps the habit going. */
 const GIFT_EVERY = 3;
+/** Fever: fill the meter with clean play, then every tap becomes a magnet for a few seconds. */
+const FEVER_FULL = 12;
+const FEVER_SECONDS = 7;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stage = $('stage');
@@ -37,6 +40,8 @@ const vehiclesEl = $('vehicles');
 const benchEl = $('bench');
 const toastEl = $('toast');
 const chainEl = $('chain');
+const feverEl = $('fever');
+const feverFill = feverEl.querySelector<HTMLElement>('.fever-fill')!;
 
 const params = new URLSearchParams(location.search);
 // ?skin=gems|critters picks the look; gems is the default.
@@ -56,6 +61,8 @@ let offerUsed = false;
 let history: JamState[] = [];
 /** Consecutive direct boardings without benching. */
 let chain = 0;
+let fever = 0;
+let feverEndsAt = 0;
 const shuffleRng = new Rng(Date.now() & 0xffff);
 let cssW = 0;
 let cssH = 0;
@@ -106,6 +113,8 @@ function startLevel(id: number): void {
   offerUsed = false;
   history = [];
   chain = 0;
+  fever = 0;
+  endFever();
   screen = 'playing';
   overlay.innerHTML = '';
   hud.classList.remove('hidden');
@@ -209,7 +218,44 @@ function showShop(kind: Booster): void {
     </div>`;
 }
 
+// ----------------------------------------------------------------- fever
+
+function addFever(n: number): void {
+  if (!state || state.fever) return;
+  fever = Math.min(FEVER_FULL, fever + n);
+  feverFill.style.width = `${(fever / FEVER_FULL) * 100}%`;
+  if (fever >= FEVER_FULL) startFever();
+}
+
+function startFever(): void {
+  if (!state) return;
+  state.fever = true;
+  feverEndsAt = gameClock() + FEVER_SECONDS;
+  feverEl.classList.add('on');
+  stage.classList.add('fever-on');
+  chainEl.textContent = '🔥 FEVER! 🔥';
+  chainEl.className = 'chain show hot';
+  sfx.fever();
+  haptic(40);
+}
+
+function endFever(): void {
+  if (state) state.fever = false;
+  fever = 0;
+  feverFill.style.width = '0%';
+  feverEl.classList.remove('on');
+  stage.classList.remove('fever-on');
+}
+
+function gameClock(): number {
+  return capture ? virtualNow / 1000 : performance.now() / 1000;
+}
+
 function bumpChain(events: MoveEvent[]): void {
+  for (const e of events) {
+    if (e.type === 'board' || e.type === 'pull') addFever(1);
+    if (e.type === 'cascade') addFever(3);
+  }
   if (events.some((e) => e.type === 'cascade')) return; // the avalanche text takes the stage
   for (const e of events) {
     if (e.type === 'bench') chain = 0;
@@ -563,6 +609,8 @@ function tick(now: number): void {
     const pick = match.length ? match[0] : cells[autoRng.int(cells.length)];
     if (pick !== undefined) handleTap(pick);
   }
+  if (state?.fever && gameClock() >= feverEndsAt) endFever();
+  feverFill.style.width = state?.fever ? `${Math.max(0, (feverEndsAt - gameClock()) / FEVER_SECONDS) * 100}%` : feverFill.style.width;
   scene?.render(t);
 }
 

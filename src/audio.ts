@@ -57,6 +57,10 @@ class Sfx {
   coin(): void {
     this.tone(1200, 0.08, 'sine', 0.12, 400);
   }
+  fever(): void {
+    [392, 494, 587, 784, 988].forEach((f, i) => this.tone(f, 0.3, 'square', 0.07, 0, i * 0.07));
+    this.tone(1568, 0.6, 'sine', 0.12, -400, 0.35);
+  }
   /** Avalanche: a rising chord that climbs a step with every collector in the run. */
   cascade(run: number): void {
     const base = 440 * Math.pow(1.122, Math.min(run, 8));
