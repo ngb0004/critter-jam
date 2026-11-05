@@ -697,6 +697,11 @@ export class JamScene {
       if (travelling && t >= a.t0) {
         const k = THREE.MathUtils.clamp((t - a.t0) / Math.max(1e-6, a.t1 - a.t0), 0, 1);
         const last = a.path.length === 0;
+        // The final hop follows its cart, which may already be rolling away.
+        if (last && a.state === 'aboard') {
+          const v = this.vehicles[a.vehicle];
+          if (v) a.to.set(v.x + SEAT_X[a.seat], this.skin.seatY, ROAD_Z + 0.1);
+        }
         a.pos.lerpVectors(a.from, a.to, last ? easeInOut(k) : k);
         if (last && a.arc > 0) lift = Math.sin(k * Math.PI) * a.arc;
         const dir = a.to.clone().sub(a.from);
