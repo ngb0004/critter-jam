@@ -129,6 +129,8 @@ export interface Candidate {
   winRate: number;
   nearMissRate: number;
   avgMoves: number;
+  /** Careful-bot win rate, recorded for gate-failed fallbacks. */
+  careful?: number;
 }
 
 /** Finds a solvable level whose bot win rate is close to the target. */
@@ -141,6 +143,8 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
   let best: Candidate | null = null;
   /** Best candidate that failed the fairness gate, as a last resort. */
   let fallback: Candidate | null = null;
+  let lastWin: number | null = null;
+  let heat = 0;
   for (let t = 0; t < tries; t++) {
     const p = paramsFor(level, rng);
     // Nudge the bite: harder targets get fewer bench slots or more shuffling.
@@ -162,11 +166,15 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
     if (target < 0.7 && level >= 10) p.visibleRows = Math.min(p.visibleRows, 4);
     if (target < 0.4 && level >= 20) p.visibleRows = Math.min(p.visibleRows, 3);
     if (target > 0.9) p.temperature = Math.max(0, p.temperature - 0.3);
-    // Each try nudges the bite up or down toward the target.
-    if (best) {
-      const drift = best.winRate > target ? 0.35 : -0.35;
-      p.temperature = Math.max(0, p.temperature + drift * (t / tries + 0.5));
+    // A simple controller: each try nudges the bite toward the target based on
+    // the previous try's result, whether or not that try passed the gate.
+    if (lastWin !== null) {
+      const drift = lastWin > target ? 0.35 : -0.35;
+      heat = Math.max(-1.2, Math.min(2.5, heat + drift));
     }
+    p.temperature = Math.max(0, p.temperature + heat);
+    if (heat < -0.6) p.visibleRows = Math.min(p.rows, p.visibleRows + 1);
+    if (heat < -1.0) p.benchSlots = Math.min(7, p.benchSlots + 1);
     let def: LevelDef;
     try {
       def = randomLevel(level, p, rng);
@@ -174,14 +182,23 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
       continue;
     }
     const sol = solve(def, 250_000);
-    if (!sol.solvable) continue;
+    if (!sol.solvable) {
+      lastWin = 0; // unsolvable counts as "too hard" for the controller
+      continue;
+    }
     const d = measure(def, profile, runs, seed + t);
+    lastWin = d.winRate;
     const cand = { def, ...d };
     // Quality gate: a careful player must be able to beat every level: at least
     // half the time on normal levels, and clearly more often than a casual one on walls.
-    if (target < 0.9 && measure(def, CAREFUL, 60, seed + t + 1).winRate < Math.min(0.5, target + 0.1)) {
-      if (!fallback || Math.abs(d.winRate - target) < Math.abs(fallback.winRate - target)) fallback = cand;
-      continue;
+    if (target < 0.9) {
+      const careful = measure(def, CAREFUL, 60, seed + t + 1).winRate;
+      if (careful < Math.min(0.5, target + 0.1)) {
+        // Among gate failures, keep the fairest one that is still a plausible level.
+        const score = (w: number, c: number) => Math.abs(w - target) - c * 0.5;
+        if (d.winRate >= 0.1 && (!fallback || score(d.winRate, careful) < score(fallback.winRate, fallback.careful ?? 0))) fallback = { ...cand, careful };
+        continue;
+      }
     }
     // Score: hit the win-rate target, and among those prefer levels whose
     // losses come late (a near miss is what makes "one more go" and the offer work).
