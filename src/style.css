@@ -12,6 +12,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: #1a2a3a; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
 #stage { position: absolute; top: 0; overflow: hidden; background: var(--sky); }
+.logo p { color: #fff; opacity: 0.9; }
 #game { position: absolute; inset: 0; display: block; touch-action: none; }
 .hidden { display: none !important; }
 
@@ -37,11 +38,11 @@ html, body { margin: 0; height: 100%; background: #1a2a3a; overflow: hidden; tou
 .screen.center { justify-content: center; }
 .screen.dim { background: rgba(20, 30, 40, 0.45); }
 .screen.ad { background: #111; color: #fff; }
-.screen.home { background: linear-gradient(180deg, rgba(169, 221, 255, 0) 0%, rgba(169, 221, 255, 0.2) 40%, rgba(120, 190, 90, 0.35) 100%); }
+.screen.home { background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.1) 50%, rgba(0, 0, 0, 0.35) 100%); }
 .logo { text-align: center; margin-top: 30px; }
 .logo .emoji { font-size: 54px; }
 .logo h1 { font-size: 46px; margin: 4px 0 0; color: #fff; text-shadow: 0 5px 0 #2f8a24, 0 8px 18px rgba(0, 0, 0, 0.25); letter-spacing: -1px; }
-.logo p { margin: 6px 0 0; font-weight: 800; color: #244; }
+.logo p { margin: 6px 0 0; font-weight: 800; }
 .stats { display: flex; justify-content: center; gap: 12px; }
 .stats span { background: rgba(255, 250, 240, 0.9); padding: 6px 14px; border-radius: 18px; font-weight: 900; }
 .card { background: var(--cream); color: var(--ink); border-radius: 24px; padding: 20px 18px; box-shadow: 0 10px 0 rgba(0, 0, 0, 0.12), 0 16px 30px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column; gap: 10px; }

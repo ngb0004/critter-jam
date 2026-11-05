@@ -1,7 +1,7 @@
 import { haptic, sfx } from './audio';
 import { JamState, LevelDef, MoveEvent, addBenchSlots, canTap, currentVehicle, newState, tap } from './game/jam';
 import { Rng } from './game/rng';
-import { COLORS, JamScene } from './render3d/scene';
+import { COLORS, JamScene, SKINS, SkinName } from './render3d/scene';
 import { SaveData, loadSave, recordWin, writeSave } from './save';
 
 /**
@@ -28,6 +28,11 @@ const benchEl = $('bench');
 const toastEl = $('toast');
 
 const params = new URLSearchParams(location.search);
+// ?skin=gems|critters picks the look; gems is the default.
+const skinName: SkinName = params.get('skin') === 'critters' ? 'critters' : 'gems';
+const skin = SKINS[skinName];
+document.title = skin.title;
+document.documentElement.style.setProperty('--sky', '#' + skin.sky.toString(16).padStart(6, '0'));
 const save: SaveData = loadSave();
 sfx.enabled = save.sound;
 let levels: LevelDef[] = [];
@@ -58,7 +63,7 @@ window.addEventListener('resize', layout);
 
 function getScene(): JamScene {
   if (!scene) {
-    scene = new JamScene(canvas);
+    scene = new JamScene(canvas, skinName);
     scene.resize(cssW, cssH, window.devicePixelRatio || 1);
   }
   return scene;
@@ -187,7 +192,7 @@ function finishWin(): void {
       <div class="card pop">
         <div class="big">🎉</div>
         <h2>Level ${levelId} clear!</h2>
-        <p class="coins-won">🪙 +${coins}${bonus ? ` <small>(+${bonus} tidy bench)</small>` : ''}</p>
+        <p class="coins-won">🪙 +${coins}${bonus ? ` <small>(+${bonus} tidy tray)</small>` : ''}</p>
         ${streak.extended ? `<p class="streak">🔥 ${save.streak}-day streak${streak.frozeDay ? ' <small>(freeze used)</small>' : ''}</p>` : ''}
         <button class="btn primary" data-act="next">Next level ▶</button>
         <button class="btn ghost" data-act="home">Home</button>
@@ -207,17 +212,17 @@ function showLost(): void {
   overlay.innerHTML = `
     <div class="screen center dim">
       <div class="card pop">
-        <h2>Bench full!</h2>
-        <p class="muted">${total - left} of ${total} buses away. So close.</p>
+        <h2>${skinName === 'gems' ? 'Tray full!' : 'Bench full!'}</h2>
+        <p class="muted">${total - left} of ${total} ${skinName === 'gems' ? 'carts' : 'buses'} away. So close.</p>
         <div class="offer">
-          <div class="offer-art">🪑🪑</div>
+          <div class="offer-art">${skinName === 'gems' ? '🪙✨' : '🪑🪑'}</div>
           <div>
-            <b>+${OFFER_SLOTS} bench seats</b>
+            <b>+${OFFER_SLOTS} tray slots</b>
             <div class="muted">and keep going</div>
           </div>
           <button class="btn primary" data-act="offer" ${canPay ? '' : 'disabled'}>🪙 ${OFFER_COINS}</button>
         </div>
-        <button class="btn green" data-act="ad">▶ Watch ad for +${AD_SLOTS} seat</button>
+        <button class="btn green" data-act="ad">▶ Watch ad for +${AD_SLOTS} slot</button>
         <button class="btn ghost" data-act="retry">Give up</button>
       </div>
     </div>`;
@@ -229,14 +234,9 @@ function continueWith(slots: number): void {
   screen = 'playing';
   overlay.innerHTML = '';
   hud.classList.remove('hidden');
-  scene!.load(stateSnapshotForScene());
+  scene!.load(state);
   updateHud();
-  toast(`+${slots} seat${slots > 1 ? 's' : ''}!`);
-}
-
-/** The scene rebuilds from the current state (bench grew), so re-load it as is. */
-function stateSnapshotForScene(): JamState {
-  return state!;
+  toast(`+${slots} slot${slots > 1 ? 's' : ''}!`);
 }
 
 /** Placeholder rewarded ad: a short countdown. Swapped for a real SDK on the app build. */
@@ -263,7 +263,7 @@ function showHome(): void {
   const next = save.level;
   overlay.innerHTML = `
     <div class="screen home">
-      <div class="logo"><div class="emoji">🚌🐾</div><h1>Critter Jam</h1><p>Tap a critter. Fill the bus.</p></div>
+      <div class="logo"><div class="emoji">${skinName === 'gems' ? '💎' : '🚌🐾'}</div><h1>${skin.title}</h1><p>${skin.tagline}</p></div>
       <div class="stats">
         <span>🪙 ${save.coins}</span>
         <span>🔥 ${save.streak}</span>
