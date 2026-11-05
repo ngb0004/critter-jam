@@ -129,6 +129,7 @@ export interface Candidate {
   winRate: number;
   nearMissRate: number;
   avgMoves: number;
+  cascadeShare: number;
   /** Careful-bot win rate, recorded for gate-failed fallbacks. */
   careful?: number;
 }
@@ -200,11 +201,13 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
         continue;
       }
     }
-    // Score: hit the win-rate target, and among those prefer levels whose
-    // losses come late (a near miss is what makes "one more go" and the offer work).
-    const score = (c: Candidate) => Math.abs(c.winRate - target) + (target < 0.9 ? 0.3 * (1 - c.nearMissRate) : 0);
+    // Score: hit the win-rate target; prefer levels whose losses come late (a
+    // near miss is what makes "one more go" and the offer work); and keep
+    // avalanches a reward for set-up, not automatic: aim for 10–35% of carts.
+    const auto = (c: Candidate) => (c.cascadeShare > 0.35 ? (c.cascadeShare - 0.35) * 1.5 : c.cascadeShare < 0.1 && level > 3 ? (0.1 - c.cascadeShare) * 1.0 : 0);
+    const score = (c: Candidate) => Math.abs(c.winRate - target) + (target < 0.9 ? 0.3 * (1 - c.nearMissRate) : 0) + auto(c);
     if (!best || score(cand) < score(best)) best = cand;
-    if (Math.abs(d.winRate - target) < 0.05 && (target >= 0.9 || d.nearMissRate > 0.5)) break;
+    if (Math.abs(d.winRate - target) < 0.05 && (target >= 0.9 || d.nearMissRate > 0.5) && d.cascadeShare <= 0.35) break;
   }
   if (!best && fallback) return fallback;
   if (!best) {

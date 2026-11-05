@@ -24,6 +24,9 @@ export interface RunResult {
   moves: number;
   /** Share of critters boarded when the game ended. */
   progress: number;
+  /** Collectors that filled themselves (avalanches), and collectors filled in all. */
+  cascades: number;
+  carts: number;
 }
 
 export function playOnce(def: LevelDef, profile: BotProfile, rng: Rng): RunResult {
@@ -31,12 +34,14 @@ export function playOnce(def: LevelDef, profile: BotProfile, rng: Rng): RunResul
   const total = def.cells.filter((c) => c >= 0).length;
   const reach = new Uint8Array(def.cols * def.rows);
   let guard = 0;
+  let cascades = 0;
   while (s.status === 'playing' && guard++ < 1000) {
     const cell = chooseMove(s, profile, rng, reach);
     if (cell < 0) break;
-    tap(s, cell);
+    const ev = tap(s, cell);
+    if (ev) for (const e of ev) if (e.type === 'cascade') cascades++;
   }
-  return { won: s.status === 'won', moves: s.moves, progress: s.boarded / total };
+  return { won: s.status === 'won', moves: s.moves, progress: s.boarded / total, cascades, carts: s.vehicleIdx };
 }
 
 export function chooseMoveForTest(s: JamState, p: BotProfile, rng: Rng): number {
@@ -132,6 +137,8 @@ export interface Difficulty {
   /** Share of losses that came in the second half of the level. */
   nearMissRate: number;
   avgMoves: number;
+  /** Share of collectors that filled themselves by avalanche. */
+  cascadeShare: number;
 }
 
 export function measure(def: LevelDef, profile: BotProfile, runs = 200, seed = 1): Difficulty {
@@ -139,11 +146,15 @@ export function measure(def: LevelDef, profile: BotProfile, runs = 200, seed = 1
   let wins = 0;
   let near = 0;
   let moves = 0;
+  let cascades = 0;
+  let carts = 0;
   for (let i = 0; i < runs; i++) {
     const r = playOnce(def, profile, rng);
     if (r.won) wins++;
     else if (r.progress >= 0.55) near++;
     moves += r.moves;
+    cascades += r.cascades;
+    carts += r.carts;
   }
-  return { winRate: wins / runs, nearMissRate: runs - wins ? near / (runs - wins) : 0, avgMoves: moves / runs };
+  return { winRate: wins / runs, nearMissRate: runs - wins ? near / (runs - wins) : 0, avgMoves: moves / runs, cascadeShare: carts ? cascades / carts : 0 };
 }

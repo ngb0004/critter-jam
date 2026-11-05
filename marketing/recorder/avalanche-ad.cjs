@@ -4,10 +4,49 @@ const { open, setCaption, setCount, endCard, Frames, encode } = require('./commo
 
 const out = process.argv[2];
 const quick = process.argv.includes('--quick');
-const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 9);
+const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
 
 (async () => {
   const { browser, page } = await open(`http://localhost:4191/critter-jam/?level=${level}&capture`, { dpr: quick ? 1 : 3 });
+  // Scout: play levels silently (no frames drawn) and pick one with a real set-up
+  // before its first big avalanche, so the clip has a build-up and a payoff.
+  const scout = async (lv) => {
+    await page.goto(`http://localhost:4191/critter-jam/?level=${lv}&capture`);
+    await page.waitForTimeout(500);
+    return page.evaluate(() => {
+      const j = window.__jam;
+      let taps = 0, firstBig = -1, maxRun = 0, fever = false;
+      for (let step = 0; step < 120; step++) {
+        const s = j.state; if (!s || s.status !== 'playing') break;
+        const v = s.def.vehicles[s.vehicleIdx]; const cols = s.def.cols;
+        const order = [];
+        for (let c = 0; c < s.cells.length; c++) if (s.cells[c] === v || s.cells[c] === 40) order.push(c);
+        for (let c = 0; c < s.cells.length; c++) { if (s.cells[c] < 0 || order.includes(c)) continue; const b = c + cols; if (b < s.cells.length && (s.cells[b] === v || s.cells[b] === 40)) order.push(c); }
+        const soon = new Map(); for (let k = 1; k < 4; k++) { const i = s.vehicleIdx + k; if (i < s.def.vehicles.length && !soon.has(s.def.vehicles[i])) soon.set(s.def.vehicles[i], k); }
+        const rest = []; for (let c = 0; c < s.cells.length; c++) if (s.cells[c] >= 0 && !order.includes(c)) rest.push(c);
+        rest.sort((a, b) => (soon.get(s.cells[a]) ?? 9) - (soon.get(s.cells[b]) ?? 9));
+        const before = s.moves;
+        for (const c of [...order, ...rest]) { j.tap(c); if (j.state.moves !== before) break; }
+        taps++;
+        if (j.state.run > maxRun) maxRun = j.state.run;
+        if (j.state.run >= 3 && firstBig < 0) firstBig = taps;
+        if (j.state.fever) fever = true;
+      }
+      const s = j.state;
+      return { won: s.status === 'won', taps, firstBig, maxRun, fever };
+    });
+  };
+  let best = { lv: level, score: -1 };
+  for (let lv = level; lv <= level + 14; lv++) {
+    const r = await scout(lv);
+    // We want: a win, 10+ taps of build-up before the first ×3 run, a big max run, and Fever.
+    const score = (r.won ? 10 : 0) + (r.firstBig >= 10 ? 10 : r.firstBig >= 6 ? 5 : 0) + Math.min(r.maxRun, 6) * 2 + (r.fever ? 4 : 0);
+    console.log(`scout L${lv}`, JSON.stringify(r), 'score', score);
+    if (score > best.score) best = { lv, score };
+  }
+  console.log('recording level', best.lv);
+  await page.goto(`http://localhost:4191/critter-jam/?level=${best.lv}&capture`);
+  await page.waitForTimeout(800);
   const frames = new Frames(path.join(out, 'avalanche-frames'));
   // The player: match when possible, otherwise clear the blocker in front of the needed colour.
   const step = () =>

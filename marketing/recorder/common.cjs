@@ -10,16 +10,16 @@ const FPS = 30;
 const AD_CSS = `
   #hint, #toast { display: none !important; }
   .ad-layer { position: absolute; inset: 0; pointer-events: none; z-index: 50; font-family: 'Inter', 'Noto Color Emoji', sans-serif; }
-  .ad-cap { position: absolute; left: 0; right: 0; top: 118px; text-align: center; }
+  .ad-cap { position: absolute; left: 0; right: 0; top: 196px; text-align: center; }
   .ad-cap span { display: inline-block; background: #ffe14d; color: #2a2414; font-weight: 900; font-size: 27px; line-height: 1.15;
     padding: 9px 16px 10px; border-radius: 16px; box-shadow: 0 5px 0 rgba(0,0,0,0.22); transform: rotate(-2deg); max-width: 300px; }
   .ad-cap.white span { background: #ffffff; }
-  .ad-count { position: absolute; left: 0; right: 0; top: 190px; text-align: center; color: #fff; font-weight: 900; font-size: 54px;
+  .ad-count { position: absolute; left: 0; right: 0; top: 262px; text-align: center; color: #fff; font-weight: 900; font-size: 54px;
     text-shadow: 0 4px 0 rgba(0,0,0,0.3), 0 0 18px rgba(0,0,0,0.25); }
   .ad-end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-    background: radial-gradient(circle at 50% 40%, rgba(255,255,255,0.15), rgba(0,0,0,0) 60%), linear-gradient(180deg, #8fd6ff 0%, #bfe9a0 55%, #6cbf45 100%); color: #20321a; text-align: center; }
-  .ad-end h1 { font-size: 52px; font-weight: 900; margin: 0; color: #fff; text-shadow: 0 5px 0 #3b8a22, 0 8px 18px rgba(0,0,0,0.25); letter-spacing: -1px; line-height: 1; }
-  .ad-end p { font-size: 22px; font-weight: 800; margin: 0 24px; }
+    background: radial-gradient(circle at 50% 38%, rgba(255,120,200,0.35), rgba(0,0,0,0) 55%), linear-gradient(180deg, #2a2f55 0%, #1e2a44 60%, #171c33 100%); color: #ffffff; text-align: center; }
+  .ad-end h1 { font-size: 54px; font-weight: 900; margin: 0; color: #fff; text-shadow: 0 5px 0 #7a2fa0, 0 10px 24px rgba(255,90,200,0.35); letter-spacing: -1px; line-height: 1; }
+  .ad-end p { font-size: 22px; font-weight: 800; margin: 0 24px; color: #e8e6ff; }
   .ad-end .cta { margin-top: 10px; background: #ff8a3d; color: #fff; font-size: 26px; font-weight: 900; padding: 14px 34px; border-radius: 40px; box-shadow: 0 6px 0 #c4561a; }
   .ad-end .em { font-size: 74px; line-height: 1; }
 `;
