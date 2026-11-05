@@ -1,6 +1,6 @@
 // Ad 1, "Avalanche": calm matching, then the board lines up and carts fill themselves in a run; Fever to finish.
 const path = require('path');
-const { open, setCaption, setCount, endCard, Frames, encode } = require('./common.cjs');
+const { open, installLayer, setCaption, setCount, endCard, Frames, encode } = require('./common.cjs');
 
 const out = process.argv[2];
 const quick = process.argv.includes('--quick');
@@ -47,6 +47,7 @@ const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
   console.log('recording level', best.lv);
   await page.goto(`http://localhost:4191/critter-jam/?level=${best.lv}&capture`);
   await page.waitForTimeout(800);
+  await installLayer(page);
   const frames = new Frames(path.join(out, 'avalanche-frames'));
   // The player: match when possible, otherwise clear the blocker in front of the needed colour.
   const step = () =>

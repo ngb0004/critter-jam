@@ -30,14 +30,20 @@ async function open(url, { dpr = 3 } = {}) {
   page.on('pageerror', (e) => console.log('pageerror', e.message));
   await page.goto(url);
   await page.waitForTimeout(1500);
+  await installLayer(page);
+  return { browser, page };
+}
+
+/** The caption/counter/end-card layer. Call again after any page.goto, which wipes it. */
+async function installLayer(page) {
   await page.addStyleTag({ content: AD_CSS });
   await page.evaluate(() => {
+    document.querySelector('.ad-layer')?.remove();
     const layer = document.createElement('div');
     layer.className = 'ad-layer';
     layer.innerHTML = '<div class="ad-cap"></div><div class="ad-count"></div><div class="ad-end" style="display:none"></div>';
     document.getElementById('stage').appendChild(layer);
   });
-  return { browser, page };
 }
 
 async function setCaption(page, html, cls = '') {
@@ -88,4 +94,4 @@ function encode(framesDir, out) {
     '-vf', 'scale=1080:1920:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out]);
 }
 
-module.exports = { open, setCaption, setCount, endCard, Frames, encode, FPS };
+module.exports = { open, installLayer, setCaption, setCount, endCard, Frames, encode, FPS };
