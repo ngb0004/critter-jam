@@ -1,46 +1,55 @@
-# Critter Jam
+# Gem Jam (repo: critter-jam)
 
 A toy-box sorting puzzle for phones, in a chunky 3D diorama look.
 
-A yard full of little critters in colour groups. Colour-coded buses pull up
-one at a time, each with three seats. Tap a critter with a clear path to the
-front: if it matches the bus it hops aboard, otherwise it waits on the bench.
-Fill the bench and you're stuck. Rows at the back stay hidden until the rows
-in front clear, so every level has a reveal and a plan that goes wrong late.
+A mine floor packed with gems in colour groups. Colour-coded carts roll in on
+the rails, one at a time, three seats each. Tap a gem with a clear path to the
+front: if it matches the cart it hops aboard, otherwise it waits on the tray.
+Fill the tray and you're stuck. Back rows stay hidden until the rows in front
+clear, so every level has a reveal and a plan that goes wrong late.
 
 **Play:** https://ngb0004.github.io/critter-jam/ (deploys on every push to `main`)
 
-Handy URLs: `?level=N` jump to a level, `?auto` lets a bot play (for testing and ad clips).
+Handy URLs: `?level=N` jump to a level, `?skin=critters` the animals-and-buses
+look, `?capture` frame-stepped mode for ad recording (`window.__jam.advance`).
 
-## Why this game
+## The big moments
 
-The loop is the one behind Bus Jam, Color Block Jam, Screw Jam and Hexa Sort,
-four of the biggest puzzle hits of 2024–25, and the one subgenre analysts call
-open to small, fast-iterating teams. What's ours: the 3D toy look in a genre
-that is flat and plasticky, crowds of critters flowing at once, and the money
-loop designed in from day one rather than bolted on. See
-`../reports/Viral game design and monetization.md` for the research.
+- **Avalanche.** On a chain of three clean boardings, a cart that arrives to
+  find its colour already fully reachable fills itself and rolls away, and the
+  next cart gets the same chance. Runs of ×3, ×4, ×5 with a climbing chord,
+  camera shake and coin bonuses. The skill is setting it up.
+- **Fever.** Clean play fills a meter; full meter means seven seconds in which
+  every tap drags the cart's remaining gems in from anywhere on the board.
+- **Prism** (wild, fits any cart) and **Magnet gem** (board it and its two
+  mates fly in from anywhere) on selected levels.
+- **Chain counter** for consecutive direct boardings, with coin drops.
 
 ## Economy (v1)
 
-- **Coins** from wins (+15, plus a tidy-bench bonus). Starting purse 300.
-- **End Game Offer**: when the bench fills, +2 seats for 150 coins, once per level.
-- **Rewarded video** (placeholder countdown for now): +1 seat.
+- **Coins** from wins (+15, plus a tidy-tray bonus), chains and avalanches. Starting purse 300.
+- **End Game Offer**: tray full → +2 slots for 150 coins, once per level.
+- **Rewarded video** (placeholder countdown for now): +1 slot.
+- **Boosters**: Undo (40), Magnet (120), Shuffle (80, solver-checked). A gift booster every third win.
 - **Streak**: a win a day extends it; one missed day spends a freeze.
 - No energy system, no paid randomness.
 
 ## Levels
 
-`npx tsx scripts/gen-levels.ts 120 1` writes `public/levels.json`. Every level
-is proven solvable by the DFS solver and placed on a difficulty curve by a
-"casual" bot that only sees what the player sees: easy start, a tough one
-every fifth level, a wall every tenth, relief after (`src/game/gen.ts`).
+`npx tsx scripts/gen-levels.ts 120 7` writes `public/levels.json` using every
+core. Every level is proven solvable by the DFS solver and placed on a
+difficulty curve by a "casual" bot that only sees what the player sees: easy
+start, a tough one every fifth level, a wall every tenth, relief after. A
+"careful" bot gates fairness, losses are steered to come late, and the share
+of carts that fill by avalanche is kept at 10–35% so avalanches stay earned.
+`scripts/repair-levels.ts` re-measures a set and re-rolls the off-curve ones.
 
 ## Code
 
-- `src/game/jam.ts`: rules. Pure, deterministic, tested.
+- `src/game/jam.ts`: rules. Pure, deterministic, tested (`npm test`).
 - `src/game/solver.ts`: solvability proof. `src/game/bot.ts`: casual/careful/sloppy players. `src/game/gen.ts`: generator and curve.
-- `src/render3d/scene.ts`: the diorama and the tap choreography. `src/render3d/toy.ts`: the shared toy material and shape helpers.
-- `src/main.ts`: screens, HUD, input, economy. `src/save.ts`: progress and streak.
+- `src/render3d/scene.ts`: the diorama, both skins, and the tap choreography. `src/render3d/toy.ts`: shared toy material and shape helpers.
+- `src/main.ts`: screens, HUD, input, boosters, Fever, economy. `src/save.ts`: progress and streak.
+- `marketing/recorder/`: ad clip recorder (needs `npx vite preview --port 4191 --base /critter-jam/`).
 
 `npm run dev`, `npm test`, `npm run build`.
