@@ -6,7 +6,7 @@ const out = process.argv[2];
 const quick = process.argv.includes('--quick');
 // --skin critters films the animals-and-buses look; the output file name carries the skin.
 const skin = process.argv.includes('--skin') ? process.argv[process.argv.indexOf('--skin') + 1] : 'gems';
-const q = (lv) => `http://localhost:4191/critter-jam/?level=${lv}&capture${skin === 'gems' ? '' : `&skin=${skin}`}`;
+const q = (lv) => `http://localhost:4191/critter-jam/play/?level=${lv}&capture${skin === 'gems' ? '' : `&skin=${skin}`}`;
 const level = Number(process.argv[process.argv.indexOf('--level') + 1] || 14);
 
 (async () => {

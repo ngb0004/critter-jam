@@ -1,5 +1,5 @@
 // Shared helpers for recording Gem Jam ad clips from the game's ?capture mode.
-// Usage: node <clip>.cjs <outDir>. Needs `npx vite preview --port 4191 --base /critter-jam/` running.
+// Usage: node <clip>.cjs <outDir>. Needs `npx vite preview --port 4191 --base /critter-jam/` running (the game lives at /critter-jam/play/).
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -90,8 +90,11 @@ class Frames {
 }
 
 function encode(framesDir, out) {
+  // Write to a temp file and rename, so a half-written clip is never mistaken for a finished one.
+  const tmp = out.replace(/\.mp4$/, '.part.mp4');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(framesDir, 'f%05d.jpg'),
-    '-vf', 'scale=1080:1920:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out]);
+    '-vf', 'scale=1080:1920:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', tmp]);
+  fs.renameSync(tmp, out);
 }
 
 module.exports = { open, installLayer, setCaption, setCount, endCard, Frames, encode, FPS };

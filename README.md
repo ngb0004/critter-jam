@@ -8,9 +8,10 @@ front: if it matches the cart it hops aboard, otherwise it waits on the tray.
 Fill the tray and you're stuck. Back rows stay hidden until the rows in front
 clear, so every level has a reveal and a plan that goes wrong late.
 
-**Play:** https://ngb0004.github.io/critter-jam/ (deploys on every push to `main`)
+**Landing page:** https://ngb0004.github.io/critter-jam/
+**Play:** https://ngb0004.github.io/critter-jam/play/ (deploys on every push to `main`)
 
-Handy URLs: `?level=N` jump to a level, `?skin=critters` the animals-and-buses
+Handy URLs (on `/play/`): `?level=N` jump to a level, `?skin=critters` the animals-and-buses
 look, `?capture` frame-stepped mode for ad recording (`window.__jam.advance`).
 
 ## The big moments
