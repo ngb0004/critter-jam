@@ -705,11 +705,12 @@ export class JamScene {
       const face = gems ? spin : a.state === 'yard' && !moving ? 0 : a.facing;
       this.tmp.position.set(a.pos.x, a.pos.y + bob + lift, a.pos.z);
       this.tmp.rotation.set(0, face, moving && !gems ? Math.sin(t * 22 + a.phase) * 0.05 : 0);
-      this.tmp.scale.set(a.scale / Math.sqrt(squash), a.scale * squash, a.scale / Math.sqrt(squash));
+      const big = prism ? 1.15 : 1;
+      this.tmp.scale.set((a.scale * big) / Math.sqrt(squash), a.scale * big * squash, (a.scale * big) / Math.sqrt(squash));
       this.tmp.updateMatrix();
       this.body.setMatrixAt(n, this.tmp.matrix);
       if (hidden) this.col.set(gems ? 0xa8a2b8 : 0x9aa0a8);
-      else if (prism) this.col.setHSL((t * 0.25 + a.phase * 0.1) % 1, 0.75, 0.7); // a prism cycles through every colour
+      else if (prism) this.col.setHSL((t * 0.3 + a.phase * 0.1) % 1, 0.55, 0.84); // a prism: pale, shimmering through every hue
       else this.col.set(COLORS[a.color]);
       this.body.setColorAt(n, this.col);
       if (hidden) this.tmp.scale.setScalar(0.0001);
@@ -717,6 +718,7 @@ export class JamScene {
       this.detail.setMatrixAt(n, this.tmp.matrix);
       if (gems) this.detail.setColorAt(n, this.col.set(0xffffff));
       n++;
+      if (prism && !hidden && Math.random() < 0.08) this.burst(a.pos.x, a.pos.z, 0xffffff, 1);
       if (magnet && !hidden) {
         this.tmp.position.set(a.pos.x, 0.09, a.pos.z);
         this.tmp.rotation.set(0, t * 1.5, 0);
