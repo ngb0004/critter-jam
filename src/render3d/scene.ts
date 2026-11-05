@@ -65,6 +65,8 @@ interface Actor {
   facing: number;
   phase: number;
   scale: number;
+  /** When a piece aboard a departed collector is out of view and can stop drawing. */
+  goneAt: number;
 }
 
 interface Vehicle {
@@ -236,7 +238,7 @@ export class JamScene {
 
     const mk = (id: number, color: number, p: THREE.Vector3): Actor => ({
       id, color, pos: p.clone(), from: p.clone(), to: p.clone(), path: [], t0: 0, t1: 0, segDur: STEP, arc: 0,
-      state: 'yard', cell: -1, benchSlot: -1, seat: -1, vehicle: -1, facing: 0, phase: hash(id, 3) * 6, scale: 0.92 + hash(id, 9) * 0.16,
+      state: 'yard', cell: -1, benchSlot: -1, seat: -1, vehicle: -1, facing: 0, phase: hash(id, 3) * 6, scale: 0.92 + hash(id, 9) * 0.16, goneAt: Infinity,
     });
     for (let i = 0; i < def.cols * def.rows; i++) {
       const c = s.cells[i];
@@ -513,7 +515,8 @@ export class JamScene {
             v.t0 = at + HOP + 0.25;
             v.t1 = v.t0 + 0.7;
             v.targetX = -14;
-            for (const a of this.actors) if (a.state === 'aboard' && a.vehicle === v.idx) a.state = 'gone';
+            // The pieces ride off with it and stop drawing once it has left the stage.
+            for (const a of this.actors) if (a.state === 'aboard' && a.vehicle === v.idx) a.goneAt = v.t1 + 0.4;
           }
           this.cursor = at + 0.35;
           break;
@@ -550,6 +553,17 @@ export class JamScene {
     let n = 0;
     for (const a of this.actors) if ((a.state === 'aboard' || a.state === 'gone') && a.vehicle === v.idx) n++;
     return n;
+  }
+
+  /** When the scheduled choreography ends (seconds, on the render clock). */
+  get busyUntil(): number {
+    let t = this.cursor;
+    for (const v of this.vehicles) if (v.gone) t = Math.max(t, v.t1);
+    return t;
+  }
+
+  get clock(): number {
+    return this.now;
   }
 
   private boardSeat(a: Actor, v: Vehicle): void {
@@ -674,6 +688,10 @@ export class JamScene {
     let nh = 0;
     for (const a of this.actors) {
       if (a.state === 'gone') continue;
+      if (t >= a.goneAt) {
+        a.state = 'gone';
+        continue;
+      }
       const travelling = a.path.length > 0 || !a.pos.equals(a.to);
       let lift = 0;
       if (travelling && t >= a.t0) {

@@ -79,7 +79,8 @@ export function paramsFor(level: number, rng: Rng): GenParams {
     benchSlots: level < 20 ? 7 : level < 50 ? 6 : 5,
     visibleRows: level < 12 ? rows : Math.max(3, 5 - Math.floor(Math.min(1, level / 150) * 2)),
     blocked: blockedShare,
-    clumping: 0.8 - t * 0.5,
+    // Looser clumps than before: solid blocks of colour now avalanche straight through.
+    clumping: 0.6 - t * 0.35,
     temperature: 0.3 + Math.min(1, level / 150) * 0.6,
     // A prism every third level from 6, a magnet piece on the tough ones from 15.
     prisms: level >= 6 && level % 3 === 0 ? 1 : 0,
@@ -160,10 +161,7 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
     // From level 10 on, the hard ones also hide more of the yard.
     if (target < 0.7 && level >= 10) p.visibleRows = Math.min(p.visibleRows, 4);
     if (target < 0.4 && level >= 20) p.visibleRows = Math.min(p.visibleRows, 3);
-    if (target > 0.9) {
-      p.clumping = Math.min(0.95, p.clumping + 0.15);
-      p.temperature = Math.max(0, p.temperature - 0.3);
-    }
+    if (target > 0.9) p.temperature = Math.max(0, p.temperature - 0.3);
     // Each try nudges the bite up or down toward the target.
     if (best) {
       const drift = best.winRate > target ? 0.35 : -0.35;

@@ -271,11 +271,13 @@ function handleEvents(events: MoveEvent[]): void {
         sfx.depart();
         haptic(12);
         break;
-      case 'won':
-        window.setTimeout(finishWin, 900);
+      case 'won': {
+        // Let the last hop, or the whole avalanche, play out first.
+        later(finishWin, Math.max(0.9, scene!.busyUntil - scene!.clock + 0.7));
         break;
+      }
       case 'lost':
-        window.setTimeout(showLost, 600);
+        later(showLost, Math.max(0.6, scene!.busyUntil - scene!.clock + 0.3));
         break;
       default:
         break;
@@ -528,6 +530,15 @@ overlay.addEventListener('click', (e) => {
 // ?capture steps the game one video frame at a time (see __jam.advance) for smooth ad recording.
 const capture = params.has('capture');
 let virtualNow = 0;
+/** Timers on the game clock, so recorded clips keep UI and animation in step. */
+const timers: { at: number; fn: () => void }[] = [];
+function later(fn: () => void, seconds: number): void {
+  if (!capture) {
+    window.setTimeout(fn, seconds * 1000);
+    return;
+  }
+  timers.push({ at: virtualNow / 1000 + seconds, fn });
+}
 
 function frame(now: number): void {
   if (!capture) requestAnimationFrame(frame);
@@ -536,6 +547,12 @@ function frame(now: number): void {
 
 function tick(now: number): void {
   const t = now / 1000;
+  for (let i = 0; i < timers.length; ) {
+    if (timers[i].at <= t) {
+      const { fn } = timers.splice(i, 1)[0];
+      fn();
+    } else i++;
+  }
   if (params.has('auto') && state && screen === 'playing' && t > autoTimer) {
     // Autopilot for testing and ad recording: a casual bot's next move.
     autoTimer = t + 0.45;
