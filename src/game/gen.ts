@@ -77,7 +77,8 @@ export function paramsFor(level: number, rng: Rng): GenParams {
     colors,
     vehiclesPerColor,
     benchSlots: level < 20 ? 7 : level < 50 ? 6 : 5,
-    visibleRows: level < 12 ? rows : Math.max(3, 5 - Math.floor(Math.min(1, level / 150) * 2)),
+    // Hidden rows add bite, but a mostly grey board is no fun to look at: show at least half.
+    visibleRows: level < 12 ? rows : Math.max(4, Math.ceil(rows * 0.6)),
     blocked: blockedShare,
     // Looser clumps than before: solid blocks of colour now avalanche straight through.
     clumping: 0.6 - t * 0.35,
@@ -163,9 +164,9 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
       p.temperature += 0.9;
       if (level >= 20) p.benchSlots = Math.max(5, p.benchSlots - 1);
     }
-    // From level 10 on, the hard ones also hide more of the yard.
-    if (target < 0.7 && level >= 10) p.visibleRows = Math.min(p.visibleRows, 4);
-    if (target < 0.4 && level >= 20) p.visibleRows = Math.min(p.visibleRows, 3);
+    // From level 10 on, the hard ones also hide more of the yard (never more than half).
+    if (target < 0.7 && level >= 10) p.visibleRows = Math.min(p.visibleRows, Math.max(4, Math.ceil(p.rows * 0.55)));
+    if (target < 0.4 && level >= 20) p.visibleRows = Math.min(p.visibleRows, Math.max(4, Math.ceil(p.rows * 0.5)));
     if (target > 0.9) p.temperature = Math.max(0, p.temperature - 0.3);
     // A simple controller: each try nudges the bite toward the target based on
     // the previous try's result, whether or not that try passed the gate.

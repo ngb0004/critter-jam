@@ -8,13 +8,13 @@ const { execFileSync } = require('child_process');
 const FPS = 30;
 
 const AD_CSS = `
-  #hint, #toast { display: none !important; }
+  #hint, #toast, .hud-top, .hud-mid { display: none !important; }
   .ad-layer { position: absolute; inset: 0; pointer-events: none; z-index: 50; font-family: 'Inter', 'Noto Color Emoji', sans-serif; }
-  .ad-cap { position: absolute; left: 0; right: 0; top: 196px; text-align: center; }
-  .ad-cap span { display: inline-block; background: #ffe14d; color: #2a2414; font-weight: 900; font-size: 27px; line-height: 1.15;
+  .ad-cap { position: absolute; left: 0; right: 0; top: 10px; text-align: center; }
+  .ad-cap span { display: inline-block; background: #ffe14d; color: #2a2414; font-weight: 900; font-size: 24px; line-height: 1.15;
     padding: 9px 16px 10px; border-radius: 16px; box-shadow: 0 5px 0 rgba(0,0,0,0.22); transform: rotate(-2deg); max-width: 300px; }
   .ad-cap.white span { background: #ffffff; }
-  .ad-count { position: absolute; left: 0; right: 0; top: 262px; text-align: center; color: #fff; font-weight: 900; font-size: 54px;
+  .ad-count { position: absolute; left: 0; right: 0; top: 88px; text-align: center; color: #fff; font-weight: 900; font-size: 40px;
     text-shadow: 0 4px 0 rgba(0,0,0,0.3), 0 0 18px rgba(0,0,0,0.25); }
   .ad-end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
     background: radial-gradient(circle at 50% 38%, rgba(255,120,200,0.35), rgba(0,0,0,0) 55%), linear-gradient(180deg, #2a2f55 0%, #1e2a44 60%, #171c33 100%); color: #ffffff; text-align: center; }
