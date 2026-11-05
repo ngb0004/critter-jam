@@ -136,17 +136,20 @@ describe('avalanches', () => {
 describe('specials and boosters', () => {
   const base: LevelDef = { id: 9, cols: 3, rows: 2, cells: [0, 0, 1, 1, 0, 1], vehicles: [0, 1], benchSlots: 3, visibleRows: 2 };
 
-  it('a prism fits any collector and validates as a wild seat', () => {
-    const def: LevelDef = { ...base, specials: { 5: 'prism' } };
+  it('a prism is an extra wild piece: using it on any colour never strands another', () => {
+    // 3 reds, 3 blues, plus a prism in the back row.
+    const def: LevelDef = { ...base, rows: 3, cells: [0, 0, 1, 1, 0, 1, 0, EMPTY, EMPTY], vehicles: [0, 1], specials: { 6: 'prism' } };
     expect(validate(def)).toBeNull();
     const s = newState(def);
-    expect(s.cells[5]).toBe(WILD);
+    expect(s.cells[6]).toBe(WILD);
     tap(s, 0);
     tap(s, 1);
-    tap(s, 4); // red cart full and gone; blue arrives
+    tap(s, 3); // frees a path to the prism
+    tap(s, 6); // the prism takes the last RED seat (the "wrong" colour)
+    expect(s.vehicleIdx).toBe(1);
     tap(s, 2);
-    tap(s, 3);
-    tap(s, 5); // the prism takes the last blue seat
+    tap(s, 5);
+    tap(s, 4); // all three blues still exist, so the blue cart fills and the level is won
     expect(s.status).toBe('won');
     expect(solve(def).solvable).toBe(true);
   });

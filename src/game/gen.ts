@@ -70,7 +70,8 @@ export function paramsFor(level: number, rng: Rng): GenParams {
   const cols = Math.min(7, Math.max(5, Math.round(4.5 + t * 2.5)));
   // Packed from the front: just enough rows for the pieces and the scenery.
   const blocks = Math.round(critters * blockedShare);
-  const rows = Math.min(10, Math.ceil((critters + blocks) / cols));
+  const prisms = level >= 6 && level % 3 === 0 ? 1 : 0;
+  const rows = Math.min(10, Math.ceil((critters + blocks + prisms) / cols));
   return {
     cols,
     rows,
@@ -84,7 +85,7 @@ export function paramsFor(level: number, rng: Rng): GenParams {
     clumping: 0.6 - t * 0.35,
     temperature: 0.3 + Math.min(1, level / 150) * 0.6,
     // A prism every third level from 6, a magnet piece on the tough ones from 15.
-    prisms: level >= 6 && level % 3 === 0 ? 1 : 0,
+    prisms,
     magnets: level >= 15 && (level % 5 === 0 || level % 10 === 7) ? 1 : 0,
   };
 }
@@ -103,7 +104,7 @@ export function randomLevel(id: number, p: GenParams, rng: Rng): LevelDef {
   // Fill from the front, leaving some holes near the back so paths exist.
   const free: number[] = [];
   for (let i = 0; i < n; i++) if (cells[i] === EMPTY) free.push(i);
-  if (free.length < critters) throw new Error('board too small');
+  if (free.length < critters + p.prisms) throw new Error('board too small');
   const spots = free.slice(0, critters);
   // Colour assignment: paint in clumps, then shuffle a share of them.
   const pool: number[] = [];
@@ -328,8 +329,16 @@ function placeSpecials(cells: number[], vehicles: number[], p: GenParams, rng: R
     return opts.length ? rng.pick(opts) : -1;
   };
   for (let k = 0; k < p.prisms; k++) {
-    const i = pick((c) => cells[c] !== first && Math.floor(c / cols) >= 1);
-    if (i >= 0) out[i] = 'prism';
+    // An extra piece: take a mid-board spot and move the regular piece that was there to a free cell.
+    const empties: number[] = [];
+    for (let i = 0; i < cells.length; i++) if (cells[i] === EMPTY) empties.push(i);
+    if (!empties.length) break;
+    const i = pick((c) => cells[c] !== first && Math.floor(c / cols) >= 1 && Math.floor(c / cols) <= Math.floor(cells.length / cols) - 2);
+    if (i < 0) break;
+    const dest = empties[0];
+    cells[dest] = cells[i];
+    cells[i] = 0; // placeholder colour; newState turns prism cells into WILD
+    out[i] = 'prism';
   }
   const late = new Set(vehicles.slice(Math.floor(vehicles.length / 2)));
   for (let k = 0; k < p.magnets; k++) {

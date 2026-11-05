@@ -12,7 +12,11 @@
 export const CAP = 3;
 export const EMPTY = -1;
 export const BLOCKED = -2;
-/** A prism: a wild piece that fits any collector. */
+/**
+ * A prism: a wild piece that fits any collector. Prisms are extra pieces on top
+ * of the exact seat counts, so using one never leaves another colour short;
+ * whatever is left when the last collector departs simply stays behind.
+ */
 export const WILD = 40;
 
 export type Color = number;
@@ -312,14 +316,12 @@ export function validate(def: LevelDef): string | null {
   });
   const need = new Map<number, number>();
   for (const v of def.vehicles) need.set(v, (need.get(v) ?? 0) + CAP);
-  let short = 0;
   for (const [c, n] of need) {
     const have = counts.get(c) ?? 0;
-    if (have > n) return `colour ${c}: ${have} pieces for ${n} seats`;
-    short += n - have;
+    if (have !== n) return `colour ${c}: ${have} pieces for ${n} seats`;
   }
   for (const [c] of counts) if (!need.has(c)) return `colour ${c}: pieces but no collector`;
-  if (short !== wilds) return `${wilds} prisms for ${short} open seats`;
+  void wilds;
   if (def.benchSlots < 1) return 'bench';
   return null;
 }
