@@ -138,6 +138,8 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
   const runs = opts.runs ?? 120;
   const profile = opts.profile ?? CASUAL;
   let best: Candidate | null = null;
+  /** Best candidate that failed the fairness gate, as a last resort. */
+  let fallback: Candidate | null = null;
   for (let t = 0; t < tries; t++) {
     const p = paramsFor(level, rng);
     // Nudge the bite: harder targets get fewer bench slots or more shuffling.
@@ -163,20 +165,28 @@ export function generateLevel(level: number, seed: number, opts: { tries?: numbe
     } catch {
       continue;
     }
-    const sol = solve(def, 150_000);
+    const sol = solve(def, 250_000);
     if (!sol.solvable) continue;
     const d = measure(def, profile, runs, seed + t);
+    const cand = { def, ...d };
     // Quality gate: a careful player must be able to beat every level: at least
     // half the time on normal levels, and clearly more often than a casual one on walls.
-    if (target < 0.9 && measure(def, CAREFUL, 60, seed + t + 1).winRate < Math.min(0.5, target + 0.1)) continue;
-    const cand = { def, ...d };
+    if (target < 0.9 && measure(def, CAREFUL, 60, seed + t + 1).winRate < Math.min(0.5, target + 0.1)) {
+      if (!fallback || Math.abs(d.winRate - target) < Math.abs(fallback.winRate - target)) fallback = cand;
+      continue;
+    }
     // Score: hit the win-rate target, and among those prefer levels whose
     // losses come late (a near miss is what makes "one more go" and the offer work).
     const score = (c: Candidate) => Math.abs(c.winRate - target) + (target < 0.9 ? 0.3 * (1 - c.nearMissRate) : 0);
     if (!best || score(cand) < score(best)) best = cand;
     if (Math.abs(d.winRate - target) < 0.05 && (target >= 0.9 || d.nearMissRate > 0.5)) break;
   }
-  if (!best) throw new Error(`no solvable level for ${level}`);
+  if (!best && fallback) return fallback;
+  if (!best) {
+    // Nothing solvable at this size: redraw with the dials turned down.
+    if (tries <= 10) throw new Error(`no solvable level for ${level}`);
+    return generateLevel(level, seed + 101, { ...opts, tries: Math.floor(tries / 2) });
+  }
   return best;
 }
 
