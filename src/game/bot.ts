@@ -16,8 +16,8 @@ export interface BotProfile {
 }
 
 export const CASUAL: BotProfile = { lookahead: 2, mistake: 0.06, reserve: 2 };
-export const CAREFUL: BotProfile = { lookahead: 3, mistake: 0.02, reserve: 1 };
-export const SLOPPY: BotProfile = { lookahead: 1, mistake: 0.15, reserve: 2 };
+export const CAREFUL: BotProfile = { lookahead: 3, mistake: 0.02, reserve: 3 };
+export const SLOPPY: BotProfile = { lookahead: 1, mistake: 0.15, reserve: 1 };
 
 export interface RunResult {
   won: boolean;

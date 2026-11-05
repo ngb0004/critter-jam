@@ -22,7 +22,7 @@ for (let i = 0; i < levels.length; i++) {
   const bad = Math.abs(d.winRate - target) > maxOff || d.winRate < minWin || careful < Math.min(0.5, target + 0.1);
   if (!bad) continue;
   let best = { def: levels[i], off: Math.abs(d.winRate - target), win: d.winRate, careful };
-  for (const seed of [21, 34, 55, 89, 144, 233]) {
+  for (const seed of [21, 34, 55, 89]) {
     const c = generateLevel(level, seed, { tries: level >= 50 ? 140 : 80, runs: 150 });
     const cw = measure(c.def, CAREFUL, 80, 12).winRate;
     const off = Math.abs(c.winRate - target) + (cw < Math.min(0.5, target + 0.1) ? 0.3 : 0);
