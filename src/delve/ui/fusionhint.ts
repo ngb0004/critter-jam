@@ -1,7 +1,8 @@
 /**
  * Fusion discoverability (UI, read-only on the World). QA: fusions need two spells with different keywords at
  * R5 + R4 and nothing during a run said which spells pair up. These helpers drive:
- *   - a chip on NEW / RANK UP cards: "Fuses with Firebolt -> Plasma Arc (R5 + R4)"
+ *   - a chip on NEW / RANK UP cards in plain words: "Rank this to 5 and Firebolt to 4 to fuse them into Plasma Arc"
+ *     (v0.2 review), highlighted once the fusion is one pick away
  *   - a small two-icon fusion meter under the HUD slots once a partner is owned.
  * Same rule as sim/build.eligibleFusions (one of each fusion per run, max fusions, parents not fused).
  */
@@ -62,14 +63,32 @@ export function fusionPairs(w: World): FusionPair[] {
   return out;
 }
 
-/** "Fuses with Firebolt -> Plasma Arc (R5 + R4)" for a NEW / RANK UP spell card, or ''. */
-export function cardFusionHint(w: World, c: Card): string {
-  if (c.kind !== 'spell' && c.kind !== 'rank') return '';
+export interface CardFusionHint {
+  text: string;
+  /** Picks still needed after this card (0 = this pick unlocks the fusion). */
+  picks: number;
+}
+
+/** Picks needed to raise `from` to `to` when each pick adds `step` ranks. */
+const picksTo = (from: number, to: number, step: number): number => (from >= to ? 0 : Math.ceil((to - from) / Math.max(0.5, step) - 1e-6));
+
+/**
+ * Plain-words fusion hint for a NEW / RANK UP spell card (v0.2 review: "(R5 + R4)" was jargon and casual pickers never
+ * fused): "Rank this to 5 and Firebolt to 4 to fuse them into Fever Bloom (3 more picks)", "1 pick from Fever Bloom!",
+ * "Unlocks Fever Bloom!". Picks the partner and the 5/4 split that need the fewest picks. null = no fusion partner owned.
+ */
+export function cardFusionHint(w: World, c: Card): CardFusionHint | null {
+  if (c.kind !== 'spell' && c.kind !== 'rank') return null;
   const ci = SPELL_IDX.get(c.ref);
-  if (ci === undefined) return '';
+  if (ci === undefined) return null;
   const sp = SPELLS[ci];
-  if (sp.fusion) return '';
+  if (sp.fusion) return null;
   const b = w.build;
+  let cur = 0;
+  for (let s = 0; s < b.slotSpell.length; s++) if (b.slotSpell[s] === ci) cur = b.slotRank[s];
+  const after = c.rank > 0 ? c.rank : cur + 1;
+  const step = Math.max(0.5, after - cur);
+  let best: { partner: string; fusion: string; meHi: boolean; picks: number } | null = null;
   for (const f of FUSIONS) {
     if (!fusionOpen(w, f.result)) continue;
     const mine: Keyword | null = sp.keywords.includes(f.a) ? f.b : sp.keywords.includes(f.b) ? f.a : null;
@@ -78,8 +97,20 @@ export function cardFusionHint(w: World, c: Card): string {
       const si = b.slotSpell[s];
       if (si < 0 || si === ci || SPELLS[si].fusion || !SPELLS[si].keywords.includes(mine)) continue;
       if (SPELLS[si].keywords.length === sp.keywords.length && SPELLS[si].keywords.every((k) => sp.keywords.includes(k))) continue;
-      return `Fuses with ${SPELLS[si].name} → ${f.name} (R${BAL.fusionHighRank} + R${BAL.fusionLowRank})`;
+      const pr = b.slotRank[s];
+      const hiMe = picksTo(after, BAL.fusionHighRank, step) + picksTo(pr, BAL.fusionLowRank, step);
+      const loMe = picksTo(after, BAL.fusionLowRank, step) + picksTo(pr, BAL.fusionHighRank, step);
+      const meHi = hiMe <= loMe;
+      const picks = Math.min(hiMe, loMe);
+      if (!best || picks < best.picks) best = { partner: SPELLS[si].name, fusion: f.name, meHi, picks };
     }
   }
-  return '';
+  if (!best) return null;
+  const hi = BAL.fusionHighRank;
+  const lo = BAL.fusionLowRank;
+  let text: string;
+  if (best.picks === 0) text = `Unlocks ${best.fusion}! (fuses with ${best.partner})`;
+  else if (best.picks === 1) text = `1 pick from ${best.fusion}! (with ${best.partner})`;
+  else text = `Rank this to ${best.meHi ? hi : lo} and ${best.partner} to ${best.meHi ? lo : hi} to fuse them into ${best.fusion} (${best.picks} more picks)`;
+  return { text, picks: best.picks };
 }

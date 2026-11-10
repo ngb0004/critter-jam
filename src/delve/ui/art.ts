@@ -165,3 +165,16 @@ export function obCardsArt(): string {
     <g class="dv-ob-tap"><circle cx="86" cy="80" r="9" fill="#fff" opacity=".25"/><circle cx="86" cy="80" r="5" fill="#fff" opacity=".7"/></g>
   </svg>`;
 }
+
+/** Onboarding panel 5 (v0.2): the goal. A delver under a ticking timer, with a "best" crown. */
+export function obGoalArt(): string {
+  const lamp = nid('og');
+  return `<svg class="dv-ob-art" viewBox="0 0 160 120" aria-hidden="true" focusable="false">
+    <defs><radialGradient id="${lamp}" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff6d0"/><stop offset=".3" stop-color="#ffc45a" stop-opacity=".7"/><stop offset="1" stop-color="#ff8a20" stop-opacity="0"/></radialGradient></defs>
+    <ellipse cx="80" cy="76" rx="74" ry="36" fill="#2a1a18"/>
+    <g transform="translate(80 86) scale(.6)">${delver(lamp)}</g>
+    <rect x="50" y="10" width="60" height="26" rx="9" fill="#1e1428" stroke="#ffd34d" stroke-width="2"/>
+    <text x="80" y="29" text-anchor="middle" font-family="Fredoka, Nunito, system-ui, sans-serif" font-weight="700" font-size="17" fill="#ffd34d">2:31</text>
+    <g transform="translate(114 4)" fill="#ffd34d"><path d="M2 14 L0 4 L6 9 L10 2 L14 9 L20 4 L18 14 Z"/><rect x="2" y="15" width="16" height="3" rx="1"/></g>
+  </svg>`;
+}

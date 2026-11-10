@@ -12,7 +12,7 @@ import type { World } from '../core/world';
 import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
 import { SPELLS } from '../content/spells';
-import { addInst, telegraphMaterial, toyMaterial, zoneMaterial } from './materials';
+import { addInst, hullMaterial, onTopBasic, telegraphMaterial, toyMaterial, uAnchor, uFocus, uNear, zoneMaterial } from './materials';
 import {
   batGeo, beetleGeo, bossGeos, boulderGeo, chestGeo, clumpGeo, delverGeo, eliteGeo, floorQuad, gemGeo, golemGeo,
   healGeo, lanternGeo, shroomGeo, slimeGeo, wyrmJawGeo, wyrmSegGeo, wyrmSkullGeo,
@@ -153,6 +153,8 @@ export interface ActorFrame {
   glows: SpriteBatch;
   stars: SpriteBatch;
   reducedMotion: boolean;
+  /** A hostile telegraph just resolved (impact flash / shock ring); shape = TG_SHAPE, (x2, y2) = lane end. */
+  onImpact?: (x: number, y: number, r: number, shape: number, x2: number, y2: number, col: number) => void;
 }
 
 export class Actors {
@@ -180,6 +182,10 @@ export class Actors {
   private readonly floorGlow: THREE.Mesh;
   /** Non-drainable ground ring under the delver, drawn over everything (QA: lost in the Wyrmfall crowd). */
   private readonly youRing: THREE.Mesh;
+  /** Dark halo just outside the ring, so the bright ring reads on cream critters and bright floors alike. */
+  private readonly youHalo: THREE.Mesh;
+  private readonly hull: THREE.InstancedMesh;
+  private readonly hullMat: THREE.ShaderMaterial;
 
   readonly enI = new Interp(512);
   readonly prI = new Interp(512);
@@ -233,17 +239,26 @@ export class Actors {
     this.critters = {} as Record<MeshKind, Batch>;
     for (const k of MESH_KINDS) {
       const cap = k === 'elite' ? 16 : k === 'clump' ? 128 : 512;
-      this.critters[k] = batch(critterGeo[k](), toyMaterial(KIND_INFO[k].freq), cap, g);
+      // critters: their own colour under a desaturated rim, darker right next to the delver (readability in the blob)
+      this.critters[k] = batch(critterGeo[k](), toyMaterial(KIND_INFO[k].freq, { critterRim: true, nearDim: true }), cap, g);
     }
     this.kindOf = ENEMIES.map((d) => Math.max(0, MESH_KINDS.indexOf(d.mesh as MeshKind)));
     this.bossMat = toyMaterial(4, { rim: 1.3 });
     this.bosses = bossGeos().map((geo) => batch(geo, this.bossMat, 1, g));
-    const wyrmMat = toyMaterial(0, { rim: 0.9 });
+    const wyrmMat = toyMaterial(0, { rim: 1.8 });
     this.skull = batch(wyrmSkullGeo(), wyrmMat, 1, g);
     this.jaw = batch(wyrmJawGeo(), wyrmMat, 1, g);
     this.neck = batch(wyrmSegGeo(), wyrmMat, 8, g);
-    this.delver = batch(delverGeo(), toyMaterial(12, { rim: 1.2 }), 1, g);
-    this.lantern = batch(lanternGeo(), toyMaterial(0), 1, g);
+    // the delver and lantern draw in a depth band in front of the whole scene, with a bright outline hull behind them:
+    // never buried under the crowd, walls or the Wyrm (QA: lost in the Core / Wyrmfall blob)
+    this.delver = batch(delverGeo(), toyMaterial(12, { rim: 1.2, onTop: -0.985 }), 1, g);
+    this.lantern = batch(lanternGeo(), toyMaterial(0, { onTop: -0.985 }), 1, g);
+    this.hullMat = hullMaterial(-0.955, 0.1);
+    this.hull = new THREE.InstancedMesh(this.delver.mesh.geometry, this.hullMat, 1);
+    this.hull.instanceMatrix = this.delver.mesh.instanceMatrix;
+    this.hull.frustumCulled = false;
+    this.hull.count = 1;
+    g.add(this.hull);
     const pickMat = toyMaterial(0, { rim: 0.4 });
     this.gems = batch(gemGeo(), pickMat, 768, g);
     this.chests = batch(chestGeo(), pickMat, 16, g);
@@ -281,10 +296,17 @@ export class Actors {
     this.floorGlow.scale.set(7.5, 1, 7.5);
     this.floorGlow.position.y = 0.02;
     g.add(this.floorGlow);
-    const rg = new THREE.RingGeometry(0.62, 0.76, 40);
+    const hg = new THREE.RingGeometry(0.58, 1.02, 48);
+    hg.rotateX(-Math.PI / 2);
+    // ring + halo sit in an on-top depth band just behind the delver's outline: over every critter, under the delver
+    this.youHalo = new THREE.Mesh(hg, onTopBasic(new THREE.MeshBasicMaterial({ color: 0x07040a, transparent: true, opacity: 0.45, depthWrite: false, toneMapped: false }), -0.93));
+    this.youHalo.renderOrder = 41;
+    this.youHalo.position.y = 0.05;
+    g.add(this.youHalo);
+    const rg = new THREE.RingGeometry(0.66, 0.84, 48);
     rg.rotateX(-Math.PI / 2);
-    this.youRing = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0.5, depthTest: false, depthWrite: false, toneMapped: false }));
-    this.youRing.renderOrder = 41;
+    this.youRing = new THREE.Mesh(rg, onTopBasic(new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false }), -0.935));
+    this.youRing.renderOrder = 42;
     this.youRing.position.y = 0.05;
     g.add(this.youRing);
     scene.add(g);
@@ -402,6 +424,15 @@ export class Actors {
     inst(this.delver, 0, 0, hurt, sp, 0);
     writeHex(this.delver.mesh.instanceColor!.array as Float32Array, 0, hurt > 0.5 ? 0xff9090 : 0xffffff, 1);
     flush(this.delver);
+    this.hull.visible = !dead;
+    this.hull.instanceMatrix.needsUpdate = true;
+    // outline: warm cream, flashing red when hurt
+    (this.hullMat.uniforms.uCol.value as THREE.Color).setHex(hurt > 0 ? 0xff5a4a : 0xfff1c8);
+    // readability anchors for the shaders (on-top depth band, wall cutaway, critter dimming near the delver)
+    const core = w.layer >= 6;
+    uAnchor.value.set(x, 0.75, -y);
+    uFocus.value.set(x, -y);
+    uNear.value.set(x, -y, dead ? 0 : core ? 0.55 : 0.4, core ? 3.4 : 2.8);
 
     // lantern sways like a pendulum against acceleration
     const ax = (p.vx - this.lastPvx) / Math.max(dt, 1e-3);
@@ -428,11 +459,21 @@ export class Actors {
     this.lanternH = this._v.y;
     this.floorGlow.position.x = x;
     this.floorGlow.position.z = -y;
+    // the lantern's pool of light: wider and brighter in the Core, where the crowd and the dark eat the delver
+    const fgs = core ? 9 : 8;
+    this.floorGlow.scale.set(fgs, 1, fgs);
+    (this.floorGlow.material as THREE.ShaderMaterial).uniforms.uK.value = core ? 0.24 : 0.16;
     this.youRing.position.x = x;
     this.youRing.position.z = -y;
-    this.youRing.visible = !dead;
-    // brighter in the Core / Wyrmfall, where the crowd is thickest
-    (this.youRing.material as THREE.MeshBasicMaterial).opacity = w.layer >= 6 ? 0.8 : 0.45;
+    this.youHalo.position.x = x;
+    this.youHalo.position.z = -y;
+    this.youRing.visible = this.youHalo.visible = !dead;
+    // brighter in the Core / Wyrmfall, where the crowd is thickest; a slow breath so it reads as "you", not a hazard
+    const breathe = 0.5 + 0.5 * Math.sin(t * 3.2);
+    (this.youRing.material as THREE.MeshBasicMaterial).opacity = (core ? 0.85 : 0.6) + 0.12 * breathe;
+    (this.youHalo.material as THREE.MeshBasicMaterial).opacity = core ? 0.5 : 0.35;
+    const rs = 1 + 0.04 * breathe;
+    this.youRing.scale.set(rs, 1, rs);
     if (!dead) {
       this.shadow(x, y, 0.6, 0.5);
       const gp = Math.min(1.5, this.gemPulse);
@@ -510,6 +551,7 @@ export class Actors {
           this.impactNear = Math.min(this.impactNear, Math.sqrt(ddx * ddx + ddy * ddy) - tg.r[i]);
           const n2 = Math.min(28, 8 + Math.floor(tg.r[i] * 4));
           const dust = fl & TGF.TRUE_DAMAGE ? 0xc09070 : 0xff5a3a;
+          f.onImpact?.(tg.x[i], tg.y[i], tg.r[i], shape, tg.x2[i], tg.y2[i], fl & TGF.TRUE_DAMAGE ? 0xffb070 : 0xff3a2a);
           if (shape === TG_SHAPE.LANE) {
             for (let k = 0; k < 6; k++) {
               const u = k / 5;
@@ -669,7 +711,8 @@ export class Actors {
         }
       }
       if (fl & EF.FORMATION) {
-        col = mixHex(col, 0xb070ff, 0.45);
+        // a violet cast + glow marks formation members; light enough that cream shrooms stay cream (QA)
+        col = mixHex(col, 0xb070ff, 0.3);
         glow += 0.25;
       }
       if (fl & EF.ELITE) glow += 0.15;
@@ -772,7 +815,8 @@ export class Actors {
     this._m2.setPosition(0, 0.15, -0.3);
     this._m2.premultiply(this._m);
     this._m2.toArray(this.jaw.mesh.instanceMatrix.array as Float32Array, 0);
-    const col = 0x24141e;
+    // dark, but lit enough by its rim and the breath glow to read as a huge skull against the cave (v0.1: invisible)
+    const col = 0x4a2630;
     writeHex(this.skull.mesh.instanceColor!.array as Float32Array, 0, col, 1);
     writeHex(this.jaw.mesh.instanceColor!.array as Float32Array, 0, col, 1);
     inst(this.skull, 0, 0, rec * 0.8 + flash * 0.1, 0, glowK * 0.15);

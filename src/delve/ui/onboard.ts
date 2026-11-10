@@ -1,13 +1,14 @@
 /**
- * First Dive onboarding (UI). Four illustrated panels a non-gamer can read in well under a minute, shown before
+ * First Dive onboarding (UI). Five illustrated panels a non-gamer can read in well under a minute, shown before
  * the very first run (and on demand from the home screen's How to play). One idea per panel, one short line each:
  *
- *   1 Drag to move   2 Spells fire on their own   3 Red floor = move, gold = grab   4 Pick a card, survive
+ *   1 Drag to move   2 Spells fire on their own, keep moving   3 Red floor = move (dash)   4 Gold = grab, pick cards (fusion tag)
+ *   5 The goal: survive; retries are free, the best try counts (v0.2: five panels, written for non-gamers)
  *
  * Tap Next (or anywhere on the art, or swipe left), Skip at any time. Keys: Enter / Space / Right = next, Esc = skip.
  */
 import { glyph } from './glyphs';
-import { obAutoArt, obCardsArt, obMoveArt, obRedArt } from './art';
+import { obAutoArt, obCardsArt, obGoalArt, obMoveArt, obRedArt } from './art';
 
 interface Step {
   art: () => string;
@@ -19,9 +20,10 @@ interface Step {
 function steps(touch: boolean): Step[] {
   return [
     { art: obMoveArt, title: 'Drag to move', line: touch ? 'Put one thumb anywhere and drag. That is all the steering there is.' : 'Hold the mouse and drag, or use WASD / the arrow keys.', tag: '1 thumb' },
-    { art: obAutoArt, title: 'You attack on your own', line: 'Your spells aim and fire by themselves. Just stay out of reach.', tag: 'auto' },
-    { art: obRedArt, title: 'Red floor = move', line: 'Red fills up, then hits. Walk out in time. Gold = grab: gems level you up.', tag: 'red · gold' },
-    { art: obCardsArt, title: 'Pick a card, survive', line: 'Each level, pick 1 of 3 cards. Survive as long as you can; your best try today counts.', tag: 'goal' },
+    { art: obAutoArt, title: 'You attack on your own', line: 'Your spells aim and fire by themselves. Your only job: keep moving, away from the crowd.', tag: 'auto' },
+    { art: obRedArt, title: 'Red floor = move', line: touch ? 'Red circles aim where you stand. Walk out before they fill. Trapped? Tap to dash: it dodges most red floor.' : 'Red circles aim where you stand. Walk out before they fill. Trapped? Press Space to dash: it dodges most red floor.', tag: 'red' },
+    { art: obCardsArt, title: 'Grab gold, pick cards', line: 'Walk over gold gems to level up, then pick a card. A gold "Fuses with" tag means two spells can merge into a big one.', tag: 'gold' },
+    { art: obGoalArt, title: 'Survive as long as you can', line: 'Same cave for everyone today. Retries are free and only your best try counts. Dying early is normal: every try teaches you something.', tag: 'goal' },
   ];
 }
 

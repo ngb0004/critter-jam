@@ -3,10 +3,14 @@ import type { Modifiers, OmenDef, TwistDef } from '../core/types';
 import { defaultModifiers } from '../core/types';
 
 export const OMENS: readonly OmenDef[] = [
-  // no `favours` claim until it is re-gated on bot data (QA: Swarming helped Venom +15%, Ember +2%)
+  // no `favours` claim in the UI. BOT v0.2: hpU x0.6 -> x0.63, plus two rules keyed on the 'swarming' tag (spec 8:
+  // "density raises area targets", favours Ember): fire splashes x1.3 radius (sim/spells.ts SWARM_FIRE_SPLASH) and
+  // rot jumps 1.9 m instead of 2.5 m (sim/statuses.ts SWARM_SPREAD_R). Bot Omen experiment (60 greedy bots x 4 days per
+  // spec): Ember +5%, Venom +12% (was Ember +11% / Venom +24% on the v0.2 pressure curves without the rules).
+  // FIX v0.2: hpU x0.63 -> x0.66 (the v0.2 review measured Ember +10.8% / Venom +10.1%, over the +3-8% band).
   { id: 'swarming', name: 'Swarming',
-    desc: 'Many more of them, each one weaker and worth less.',
-    apply: (m) => { m.spawnRateMul *= 1.6; m.unitHpMul *= 0.6; m.xpPerUnitMul *= 0.6; m.densityMul *= 1.6; m.tags.add('swarming'); } },
+    desc: 'Many more of them, each one weaker and worth less. Fire splashes burst wider; rot jumps shorter.',
+    apply: (m) => { m.spawnRateMul *= 1.6; m.unitHpMul *= 0.66; m.xpPerUnitMul *= 0.6; m.densityMul *= 1.6; m.tags.add('swarming'); } },
   { id: 'ironhide', name: 'Ironhide',
     desc: 'Hits under 15 damage barely scratch them. Big crits crack shells.',
     // spec v1.1 numbers (x0.85 small hits, x1.10 big crits); the old x0.3 / x1.15 was a v1.0+ overshoot

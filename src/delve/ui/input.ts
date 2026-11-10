@@ -97,6 +97,7 @@ export class InputSampler {
       this.stick.style.top = `${this.oy - (e.pointerType === 'mouse' ? 0 : LIFT_PX)}px`;
       this.knob.style.transform = '';
       this.stick.classList.remove('hidden');
+      if (e.pointerType !== 'mouse') document.documentElement.classList.add('dv-touching');
       e.preventDefault();
     });
     surface.addEventListener('pointermove', (e) => {
@@ -156,6 +157,7 @@ export class InputSampler {
         return;
       }
       this.stick.classList.add('hidden');
+      document.documentElement.classList.remove('dv-touching');
     };
     surface.addEventListener('pointerup', end);
     surface.addEventListener('pointercancel', end);
@@ -228,6 +230,7 @@ export class InputSampler {
     this.pid = null;
     this.pid2 = null;
     this.stick.classList.add('hidden');
+    document.documentElement.classList.remove('dv-touching');
   }
 
   reset(): void {

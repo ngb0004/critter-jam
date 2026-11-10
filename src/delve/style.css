@@ -253,14 +253,16 @@ details[open] > summary .dv-chev { transform: rotate(225deg); }
 .dv-boss-fill, .dv-boss-lag { position: absolute; inset: 0; transform-origin: left; }
 .dv-boss-fill { background: linear-gradient(180deg, color-mix(in srgb, var(--bc) 70%, #fff), var(--bc)); transition: transform .1s; }
 .dv-boss-lag { background: #fff8; transition: transform .7s .2s ease-out; }
-.dv-banner { --bc: #ffc27a; position: absolute; left: 0; right: 0; top: 30%; text-align: center; opacity: 0; pointer-events: none; padding: 0 16px; }
+.dv-banner { --bc: #ffc27a; position: absolute; left: 0; right: 0; top: calc(var(--sat, 0px) + 175px); text-align: center; opacity: 0; pointer-events: none; padding: 0 16px; }
+/* a telegraph near the delver: the banner steps back (v0.2 review: "The Core" banner hid a boss beam at 5:00) */
+.dv-banner.faint .dv-banner-title, .dv-banner.faint .dv-banner-sub, .dv-banner.faint .dv-banner-kicker { opacity: .35; transition: opacity .15s; }
 .dv-banner.show { animation: dv-banner var(--bd, 2.6s) ease-out forwards; }
 .dv-banner.top { top: calc(var(--sat, 0px) + 112px); }
 .dv-banner.top .dv-banner-title { font-size: clamp(26px, 6.5vw, 40px); }
 .dv-banner.top .dv-banner-sub { font-size: 13px; margin-top: 2px; }
 @keyframes dv-banner { 0% { opacity: 0; transform: scale(1.25); letter-spacing: .3em; } 12% { opacity: 1; transform: scale(1); letter-spacing: .02em; } 78% { opacity: 1; } 100% { opacity: 0; transform: translateY(-12px); } }
 .dv-banner-kicker { font-family: var(--head); font-weight: 600; font-size: 14px; letter-spacing: .3em; text-transform: uppercase; color: var(--bc); text-shadow: 0 0 12px var(--bc); }
-.dv-banner-title { font-family: var(--head); font-weight: 700; font-size: clamp(34px, 9vw, 60px); line-height: 1.05; color: #fff; text-shadow: 0 0 30px var(--bc), 0 4px 0 #0009, 0 0 60px var(--bc); }
+.dv-banner-title { font-family: var(--head); font-weight: 700; font-size: clamp(30px, 7.5vw, 50px); line-height: 1.05; color: #fff; text-shadow: 0 0 30px var(--bc), 0 4px 0 #0009, 0 0 60px var(--bc); }
 .dv-banner-sub { margin-top: 6px; font-weight: 800; font-size: 15px; color: var(--ink); text-shadow: 0 2px 6px #000; }
 #dv-ui.dv-paused .dv-caption { visibility: hidden; }
 .dv-caption {
@@ -273,14 +275,15 @@ details[open] > summary .dv-chev { transform: rotate(225deg); }
 @keyframes dv-bob { 50% { transform: translate(-50%, -4px); } }
 .dv-toast {
   position: absolute; left: 50%; top: calc(var(--sat) + 132px); transform: translate(-50%, -6px); opacity: 0; transition: opacity .25s, transform .25s;
-  display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 14px; font-size: 14px; font-weight: 700; white-space: nowrap;
-  background: rgba(14, 9, 20, .82); box-shadow: inset 0 0 0 1.5px var(--line2); pointer-events: none; max-width: 94vw;
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 14px; border-radius: 14px; font-size: 14px; font-weight: 700;
+  white-space: normal; text-align: center; width: max-content; max-width: min(calc(100vw - 32px), 460px); line-height: 1.3;
+  background: rgba(14, 9, 20, .82); box-shadow: inset 0 0 0 1.5px var(--line2); pointer-events: none;
 }
 .dv-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .dv-toast .dv-ico { font-size: 18px; }
 .dv-toast.gold { box-shadow: inset 0 0 0 1.5px var(--gold); color: #ffe9a8; }
 .dv-toast.gold .dv-ico { color: var(--gold); }
-.dv-toast.violet { box-shadow: inset 0 0 0 1.5px var(--violet); color: #e2d4ff; }
+.dv-toast.violet { box-shadow: inset 0 0 0 2px #b070ff, 0 0 14px rgba(176, 112, 255, .45); color: #e2d4ff; } /* = renderer formation violet 0xb070ff */
 .dv-toast.red { box-shadow: inset 0 0 0 1.5px var(--red); color: #ffd0d0; }
 .dv-arrow { --bc: #ff4d3d; position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
 .dv-arrow .dv-ico { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; color: var(--bc); filter: drop-shadow(0 0 8px var(--bc)) drop-shadow(0 2px 2px #000); animation: dv-beat 1s infinite; }
@@ -309,7 +312,10 @@ details[open] > summary .dv-chev { transform: rotate(225deg); }
   background: radial-gradient(circle, rgba(255, 230, 190, .08) 0 55%, rgba(255, 230, 190, .16) 56% 58%, transparent 60%);
   box-shadow: 0 0 0 2px rgba(255, 220, 170, .28), 0 0 26px rgba(255, 180, 90, .18); }
 .dv-knob { position: absolute; left: 31px; top: 31px; width: 42px; height: 42px; border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #fff6e8, #ffcf8a 55%, #e8954a); box-shadow: 0 0 18px rgba(255, 190, 100, .7), 0 3px 8px #0008; }
+  background: radial-gradient(circle at 40% 35%, rgba(255, 246, 232, .42), rgba(255, 207, 138, .26) 60%, rgba(232, 149, 74, .14));
+  box-shadow: inset 0 0 0 2.5px rgba(255, 230, 190, .85), 0 0 12px rgba(255, 190, 100, .35); }
+/* v0.2 review: the opaque knob hid a live red telegraph; it is now a see-through ring. Captions lift above the stick. */
+.dv-touching .dv-caption.show:not(.low) { bottom: calc(var(--sab) + 62%); }
 
 /* ------------------------------------------------------------------ CARDS */
 .dv-cards {
@@ -377,6 +383,9 @@ details[open] > summary .dv-chev { transform: rotate(225deg); }
 .dv-card-desc { font-size: 14px; line-height: 1.3; color: var(--ink); opacity: .92; }
 .dv-card-fhint { display: flex; gap: 5px; align-items: center; font-size: 12px; font-weight: 800; line-height: 1.25; color: #ffe08a; background: rgba(255, 211, 77, .12); box-shadow: inset 0 0 0 1px rgba(255, 211, 77, .45); border-radius: 9px; padding: 4px 7px; text-align: left; }
 .dv-card-fhint .dv-ico { flex: none; color: #ffd34d; }
+.dv-card-fhint.near { color: #2a1a08; background: linear-gradient(90deg, #ffd34d, #ffb347); box-shadow: 0 0 12px rgba(255, 211, 77, .55); font-size: 13px; }
+.dv-card-fhint.near .dv-ico { color: #2a1a08; }
+.dv-card.fuse-near { box-shadow: inset 0 0 0 2.5px #ffd34d, 0 0 22px rgba(255, 211, 77, .5); }
 .dv-card-detail { font-size: 12.5px; font-weight: 800; color: var(--teal); font-variant-numeric: tabular-nums; }
 .dv-card-col { align-self: flex-start; font-size: 11px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; color: #8fe6ff; }
 .dv-card-key { display: none; position: absolute; right: 12px; bottom: 10px; width: 22px; height: 22px; border-radius: 6px; place-items: center; font-size: 12px; font-weight: 900; color: var(--mute); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .15); }
@@ -412,7 +421,10 @@ details[open] > summary .dv-chev { transform: rotate(225deg); }
 @media (max-height: 700px) and (max-width: 759px) {
   .dv-card { min-height: 84px; padding-top: 8px; padding-bottom: 8px; }
   .dv-card-desc { font-size: 13px; }
-  .dv-card-detail { display: none; }
+  /* short phones: a rank-up card shows what the rank does (its numbers) instead of re-describing a spell you own */
+  .dv-card:not(.k-rank) .dv-card-detail { display: none; }
+  .dv-card.k-rank .dv-card-desc { display: none; }
+  .dv-card.k-rank .dv-card-detail { font-size: 14px; }
   .dv-cards-title { font-size: 26px; }
 }
 
@@ -715,6 +727,8 @@ html.dv-reduced .dv-fusion .dv-fu-rays { display: none; }
 .dv-results.t-landed .dv-res-tip { transition-delay: .2s; } .dv-results.t-landed .dv-sharecard { transition-delay: .26s; }
 .dv-res-grid { grid-template-columns: 1fr 1fr; }
 .dv-rank .dv-rank-v { color: var(--teal); }
+.dv-rank.low .dv-rank-v { color: #b6ff9a; }
+.dv-rank-next { display: block; font-weight: 800; color: var(--ink) !important; opacity: 1 !important; }
 .dv-rank-curve { width: 100%; height: 50px; margin: 4px 0 0; overflow: visible; }
 .dv-rank-ax { font: 700 8px var(--body); fill: var(--mute); }
 .dv-pts .dv-pts-v { color: var(--gold); }
@@ -824,4 +838,48 @@ html.dv-reduced .dv-res-stamp { transform: rotate(-3deg); }
   .dv-mod-txt em { display: none; }
   .dv-divebar .dv-dive-note { display: none; }
   .dv-dive { min-height: 58px; font-size: 22px; }
+}
+
+/* ---------- v0.2 results layout. Phones: one column (a, rank/points, mini/build, share). Desktop: two columns so the
+   share card sits above the pinned DIVE AGAIN bar without scrolling (v0.1 QA: it was hidden behind the bar). */
+.dv-res-a, .dv-res-b, .dv-res-c { display: contents; }
+.dv-res-a > *, .dv-res-c > * { order: 0; }
+.dv-res-b > .dv-res-grid { order: 1; }
+.dv-res-c > * { order: 2; }
+.dv-res-b > .dv-sharecard { order: 3; }
+.dv-res-inner > .dv-res-actions { order: 4; }
+.dv-res-inner > .dv-dive-note { order: 5; }
+.dv-res-inner > .dv-demo-tag { order: -1; }
+.dv-demo-tag { position: relative; z-index: 5; align-self: center; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 900; letter-spacing: .02em;
+  color: #2a1a08; background: #ffc27a; box-shadow: 0 2px 10px rgba(255, 170, 80, .35); }
+.dv-home-demo { align-self: center; width: fit-content; margin: 2px auto 4px; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 900; color: #2a1a08; background: #ffc27a; text-align: center; }
+@media (min-width: 900px) and (min-height: 560px) {
+  .dv-res-inner { display: grid; max-width: 1080px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; row-gap: 12px;
+    grid-template-areas: "tag b" "a b" "c b" "act act" "note note"; align-items: start; }
+  .dv-res-a, .dv-res-b, .dv-res-c { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .dv-res-a { grid-area: a; } .dv-res-b { grid-area: b; } .dv-res-c { grid-area: c; }
+  .dv-res-inner > .dv-demo-tag { grid-area: tag; justify-self: center; }
+  .dv-res-inner > .dv-res-actions { grid-area: act; margin: 4px 0 0; padding-left: 0; padding-right: 0; }
+  .dv-res-inner > .dv-dive-note { grid-area: note; }
+  .dv-res-time { font-size: clamp(76px, 9vw, 104px); }
+}
+.dv-hud.cards-open .dv-caption:not(.low) { opacity: 0; visibility: hidden; }
+
+/* v0.2 review: the desktop HUD read tiny at 1280x720 (28 px slots); scale the corners up on big viewports */
+@media (min-width: 1000px) and (min-height: 640px) {
+  .dv-slot { width: 38px; height: 43px; font-size: 21px; border-radius: 11px; }
+  .dv-slot .dv-ico2 { font-size: 13px; }
+  .dv-slots { max-width: 260px; gap: 5px; }
+  .dv-hp { max-width: 290px; }
+  .dv-hp-bar { height: 17px; border-radius: 9px; }
+  .dv-hp-ico { font-size: 24px; }
+  .dv-hp-num { font-size: 15px; }
+  .dv-clock { font-size: 42px; }
+  .dv-where { font-size: 14px; padding: 4px 11px; }
+  .dv-fmeter { font-size: 13px; }
+  .dv-fmeter .dv-ico { font-size: 14px; }
+  .dv-fmeter i { width: 70px; height: 5px; }
+  .dv-xpbar { height: 16px; }
+  .dv-lv { font-size: 12.5px; }
+  .dv-count { font-size: 15px; }
 }

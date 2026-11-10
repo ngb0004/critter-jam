@@ -11,7 +11,7 @@
  */
 import { BAL, DT, WORLD, secToTicks } from '../core/constants';
 import { EV, type EventQueue } from '../core/events';
-import { EF } from '../core/types';
+import { EF, TG_COLOR, TG_SHAPE } from '../core/types';
 import type { World } from '../core/world';
 import { BOSSES } from '../content/bosses';
 import { layerDef } from '../content/layers';
@@ -163,7 +163,12 @@ export class Hud {
           this.toast(`${glyph('wyrm')} Stagger +${ev.v[i].toFixed(0)} s`, 900, 'gold');
           break;
         case EV.FORMATION:
-          this.toast(`<b>Formation!</b> Violet floor: they close in. Find the gap.`, 2200, 'violet');
+          // v0.2: name what is really violet on screen. The renderer marks a formation with a 1 s violet outline
+          // (TG_COLOR.VIOLET, 0xb070ff) and then tints its critters violet (actors.ts EF.FORMATION); the floor itself
+          // stays its normal colour, and red on the floor is only ever a burst. So the caption talks about critters.
+          this.toast(ev.a[i] === 1
+            ? '<span><b>Formation!</b> A wall of violet critters sweeps in. Find the gap.</span>'
+            : '<span><b>Formation!</b> A ring of violet critters closes in. Slip through the gap.</span>', 2400, 'violet');
           break;
         case EV.CHEST:
           if (ev.a[i] === 0) this.toast(`${glyph('chest')} <b>A chest!</b> Grab the gold.`, 2000, 'gold');
@@ -257,6 +262,8 @@ export class Hud {
       this.el.banner.classList.remove('show');
       this.bannerUntil = 0;
     }
+    // a live red telegraph on or right next to the delver: the banner steps back so it never hides the warning
+    this.set('bfaint', this.bannerUntil && dangerNear(w, 1.5) ? 1 : 0, (v) => this.el.banner.classList.toggle('faint', v === 1));
   }
 
   private renderSlots(w: World): void {
@@ -281,7 +288,7 @@ export class Hud {
     if (pairs.length) {
       html += '<span class="dv-fmeters">';
       for (const p of pairs.slice(0, 2)) {
-        html += `<span class="dv-fmeter${p.progress >= 1 ? ' ready' : ''}" title="${p.name}: needs R5 + R4" style="--kw:${KW_COLOR[p.a]};--kw2:${KW_COLOR[p.b]}">${glyph(p.a)}${glyph(p.b)}<b>${p.name}</b><i><u style="width:${Math.round(p.progress * 100)}%"></u></i></span>`;
+        html += `<span class="dv-fmeter${p.progress >= 1 ? ' ready' : ''}" title="${p.name}: one spell at rank 5, the other at rank 4" style="--kw:${KW_COLOR[p.a]};--kw2:${KW_COLOR[p.b]}">${glyph(p.a)}${glyph(p.b)}<b>${p.name}</b><i><u style="width:${Math.round(p.progress * 100)}%"></u></i></span>`;
       }
       html += '</span>';
     }
@@ -349,11 +356,37 @@ export class Hud {
     dx /= d;
     dy /= d;
     const m = 44;
+    // keep the arrow (and its label below it) clear of the top HUD: timer, layer line and the boss bar's name
+    // (QA v0.1: the WYRM label sat on the boss name at top centre)
+    const bb = bar.getBoundingClientRect();
+    const sr = this.root.getBoundingClientRect();
+    const top = Math.max(m + 40, bb.bottom - sr.top + 26);
+    const bottom = vh - m - 40;
     const tx = dx !== 0 ? (cx - m) / Math.abs(dx) : 1e9;
-    const ty = dy !== 0 ? (cy - m - 40) / Math.abs(dy) : 1e9;
-    const t = Math.min(tx, ty);
-    const ax = cx + dx * t;
-    const ay = cy + dy * t;
+    const ty = dy < 0 ? (cy - top) / -dy : dy > 0 ? (bottom - cy) / dy : 1e9;
+    const t = Math.max(0, Math.min(tx, ty));
+    let ax = cx + dx * t;
+    let ay = cy + dy * t;
+    // v0.2 review: keep the arrow and its label out of the dash button (where the right thumb rests) and the spell
+    // slots: slide to the nearest free side of the box, staying on screen
+    for (const box of [this.el.dashbtn, this.el.slots]) {
+      const rb = box.getBoundingClientRect();
+      if (rb.width <= 0) continue;
+      const pad = 22;
+      // the arrow glyph spans ay-17..ay+17, its label ay+20..ay+34
+      const l = rb.left - sr.left - 17 - pad, r = rb.right - sr.left + 17 + pad;
+      const tp = rb.top - sr.top - 34 - pad, bt = rb.bottom - sr.top + 17 + pad;
+      if (ax <= l || ax >= r || ay <= tp || ay >= bt) continue;
+      const opts: [number, number][] = [[ax, tp], [ax, bt], [l, ay], [r, ay]];
+      let bx = ax, by = ay, bd = 1e9;
+      for (const [ox, oy] of opts) {
+        if (ox < m - 20 || ox > vw - m + 20 || oy < top - 20 || oy > vh - 20) continue;
+        const dd = Math.abs(ox - ax) + Math.abs(oy - ay);
+        if (dd < bd) { bd = dd; bx = ox; by = oy; }
+      }
+      ax = bx;
+      ay = by;
+    }
     const deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
     a.classList.remove('hidden');
     a.style.transform = `translate(${ax.toFixed(1)}px, ${ay.toFixed(1)}px)`;
@@ -362,6 +395,28 @@ export class Hud {
     a.style.setProperty('--bc', color);
     (a.lastElementChild as HTMLElement).textContent = name === 'The Wyrm' ? 'WYRM' : name === 'Elite' ? 'ELITE' : 'BOSS';
   }
+}
+
+/** Is an unresolved red (hostile) telegraph within `m` metres of the delver? (read-only) */
+function dangerNear(w: World, m: number): boolean {
+  const tg = w.tg;
+  const px = w.player.x, py = w.player.y;
+  for (let i = 0; i < tg.hi; i++) {
+    if (!tg.alive[i] || tg.resolved[i] || tg.color[i] !== TG_COLOR.RED) continue;
+    let d: number;
+    if (tg.shape[i] === TG_SHAPE.LANE) {
+      const ex = tg.x2[i] - tg.x[i], ey = tg.y2[i] - tg.y[i];
+      const L2 = ex * ex + ey * ey || 1e-6;
+      const u = Math.max(0, Math.min(1, ((px - tg.x[i]) * ex + (py - tg.y[i]) * ey) / L2));
+      const qx = tg.x[i] + ex * u - px, qy = tg.y[i] + ey * u - py;
+      d = Math.sqrt(qx * qx + qy * qy) - tg.r[i];
+    } else {
+      const qx = tg.x[i] - px, qy = tg.y[i] - py;
+      d = Math.sqrt(qx * qx + qy * qy) - tg.r[i];
+    }
+    if (d < m) return true;
+  }
+  return false;
 }
 
 export const hex = (c: number): string => `#${(c & 0xffffff).toString(16).padStart(6, '0')}`;

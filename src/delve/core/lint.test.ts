@@ -50,7 +50,7 @@ function constantsHash(): string {
 }
 
 /** SIM_VERSION -> constants hash. When you change BAL/CAP/TIMELINE/WORLD: bump SIM_VERSION and add the new hash. */
-const KNOWN: Record<number, string> = { 2: 'cac0b8aa' };
+const KNOWN: Record<number, string> = { 2: 'cac0b8aa', 3: 'f5d34738', 4: 'ba13b757' };
 
 describe('SIM_VERSION', () => {
   it('is bumped whenever the sim constants change', () => {

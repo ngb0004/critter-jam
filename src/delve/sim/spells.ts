@@ -573,12 +573,17 @@ function fusionShockwave(w: World, slot: number): void {
  * Damage everything in a radius (splash). exclude = enemy already hit directly (or -1). Gated per source,
  * applies the spell's status. Used by projectiles.ts too. Uses its own scratch buffer (safe inside qA loops).
  */
+/** Fire splash radius multiplier under the Swarming Omen (splashAt). */
+export const SWARM_FIRE_SPLASH = 1.3;
+
 export function splashAt(w: World, x: number, y: number, r: number, dmg: number, slot: number, spellIdx: number, exclude = -1): void {
   const en = w.en;
   const def = SPELLS[spellIdx];
   const X = SPELL_X[spellIdx];
   const st = def.status;
   const scale = slot < BAL.spellSlots ? slotScale(w, slot) : 1;
+  // Swarming (spec 8: "density raises area targets", favours Ember): fire splashes burst wider in the packed crowd
+  if (def.keywords[0] === 'fire' && w.mods.tags.has('swarming')) r *= SWARM_FIRE_SPLASH;
   const buf = w.spells.qSplash;
   const n = w.grid.queryCircle(x, y, r + 1.5, buf);
   for (let q = 0; q < n; q++) {

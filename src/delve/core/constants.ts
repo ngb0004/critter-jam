@@ -7,8 +7,8 @@
  * ends in Ticks. Distances in metres. "m" in formulas = minutes.
  */
 
-/** Bump whenever sim constants or sim logic change (stored replays of another version are refused). 2 = FIX v1 pass. */
-export const SIM_VERSION = 2;
+/** Bump whenever sim constants or sim logic change (stored replays of another version are refused). 2 = FIX v1 pass, 3 = BOT v0.2 balance, 4 = FIX v0.2 (enrage, layer mix fade-in, Swarming HP). */
+export const SIM_VERSION = 4;
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;
 export const secToTicks = (s: number): number => Math.round(s * TICK_HZ);
@@ -59,32 +59,39 @@ export const TIMELINE = {
 
 /** Spec section 7 balance constants (v1.1), names follow the macro-sim. */
 export const BAL = {
-  // pressure 7.1. BOT balance pass (real-sim bot population, scripts/delve-pop.ts): was hp0 11, hpC 0.34,
-  // coreStep 1.5, dmg0 2.0, dmgD 0.16, dmgC 0.2, burstRate 0.05/0.15/0.15, burstPct 0.12/0.09, telegraphCore 0.8.
-  // FIX pass (QA): bursts moved toward the spec (0.29 -> 0.22 of max HP, layer growth 0.45 -> 0.34; red floor
-  // was ~90% of deaths and killed novices in layers 1-2) and pressure moved into the late Descent and the horde
-  // (hp0 16 -> 13 with hpD 0.33 -> 0.45, dmg0 3 -> 2.2 with dmgD 0.2 -> 0.46: gentler layers 1-2 for players without
-  // crowd awareness, about the same at 5:00; hpC 0.42 -> 0.48, coreStep 1.6 -> 1.7 over a wider 310-410 s ramp,
-  // dmgC 0.25 -> 0.3). Bot deaths: overrun ~50% / red ~50% (was 8% / 90%). A fully
-  // overrun-driven tuning (spec 60-75%) compressed every tier into one Core wall (CV 0.12, 9% in one 10 s
-  // bucket), so this stops halfway; see ARCHITECTURE.md changelog "FIX v1".
-  hp0: 13, hpD: 0.45, hpC: 0.48, coreStep: 1.7, coreStepT0: 310, coreStepT1: 410,
-  n0: 1.6, nD: 0.2, nC: 0.08,
-  dmg0: 2.2, dmgD: 0.46, dmgC: 0.3,
+  // pressure 7.1. History: v1 skeleton hp0 11 hpC 0.34 coreStep 1.5 dmg0 2.0 dmgD 0.16 dmgC 0.2 burstRate 0.05/0.15/0.15
+  // burstPct 0.12/0.09; BOT v1 raised bursts (the horde never reached a moving bot); FIX v1 (hp0 13 hpD 0.45 hpC 0.48
+  // coreStep 1.7 dmg0 2.2 dmgD 0.46 burstRate 0.08/0.34/0.1 burstPct 0.22/0.05) left deaths 49% overrun / 50% red,
+  // a 10:48 ceiling and 5.9% of daily bests in one 10 s bucket.
+  // BOT v0.2 (real-engine population, scripts/delve-pop.ts, ARCHITECTURE.md changelog "BOT v0.2"):
+  //  - bursts back toward the spec (size 0.22 -> 0.16 of max HP, layer growth 0.34 -> 0.30, Core growth 0.10 -> 0.06):
+  //    red floor ~30% of deaths, overrun ~65% (spec 60-75%).
+  //  - gentler first layers, steeper late Descent (hp0 13 -> 14 with hpD 0.45 -> 0.58; contact dmg0 2.2 -> 1.0 with
+  //    dmgD 0.46 -> 0.66; spawn n0 1.6 -> 1.3 with nD 0.2 -> 0.26): novices reach layers 3-4, the late Descent filters.
+  //  - the Core: a bigger early step (x2.1 over 5:00-9:00, was x1.7 over 5:10-6:50) then slow growth (hpC 0.48 -> 0.21):
+  //    the low late-Core slope spreads the strong players out (gate 2) and lets the best reach the 12:00 Wyrmfall.
+  hp0: 14, hpD: 0.58, hpC: 0.21, coreStep: 2.1, coreStepT0: 300, coreStepT1: 540,
+  n0: 1.3, nD: 0.26, nC: 0.08,
+  dmg0: 1.0, dmgD: 0.66, dmgC: 0.3,
   kappa: 0.012, nsafeScale: 10, nsafeE: 1.5, chipE: 0.8,
-  burstRate0: 0.08, burstRateD: 0.34, burstRateC: 0.1,
-  burstPct0: 0.22, burstPctC: 0.05, burstCap: 0.85,
+  burstRate0: 0.07, burstRateD: 0.3, burstRateC: 0.06,
+  burstPct0: 0.16, burstPctC: 0.06, burstCap: 0.85,
   telegraphDescent: 1.2, telegraphCore: 1.0, burstJitter: 0.5,
   // formations
   formT: 360, formGapLo: 20, formGapHi: 30, formLen: 4, formNsafe: 15, formMass: 25,
   // render cap, clumps
   renderCap: 400, queueCap: 200, clumpSize: 5, radiusCapFrac: 0.38,
-  // bosses 3.1
-  // FIX pass: x2 (spec v1.0 values were [250, 750, 1600, 3000, 4600]); with the soak now DIVERTING damage (spec 3.1)
-  // bosses lived 7-15 s and died before showing their patterns
-  bossHP: [500, 1500, 3200, 6000, 9200] as readonly number[],
-  bossTime: 40, bossBurst: 0.13, enrageMax: 2.5, enrageStart: 20, enrageLen: 40,
-  bossXP: 0.6, carryCap: 0.5, eliteDoorHP: 40, eliteDoorT: 20,
+  // bosses 3.1. FIX v1 doubled v1.0 HP to [500, 1500, 3200, 6000, 9200] and bosses still died 9-18 s after spawning.
+  // BOT v0.2: HP [550, 1900, 2400, 7000, 10000] -> median kills ~20-30 s; the soak (spec 3.1: 50% diverted) is 10%,
+  // ramped in over 8 s: a 50% cut in trash clearing at the shared :40 tick overran every weak build in the same 10 s
+  // (piles of 7-9% right after the L4/L5 bosses); patterns hit softer (bossBurst 0.13 -> 0.10 scales every pattern in
+  // sim/bosses.ts) and the soft enrage starts later and ramps slower (20 s / 40 s -> 25 s / 60 s, spec v1.1 60 s).
+  // FIX v0.2: enrage 25 s / 60 s -> 35 s / 80 s. Weak builds that cannot kill the 7000 HP Prism Warden met its enrage at
+  // 4:05, right as layer 5 began, and 6.9% of all daily bests fell in 4:10-4:20 (gate 2); with this and the 20 s layer mix
+  // fade-in (sim/spawn.ts MIX_BLEND_S) the 4:00-5:00 share drops from 22% to ~17-20%.
+  bossHP: [550, 1900, 2400, 7000, 10000] as readonly number[],
+  bossTime: 40, bossBurst: 0.1, enrageMax: 2.5, enrageStart: 35, enrageLen: 80,
+  bossXP: 0.6, carryCap: 0.5, bossSoak: 0.1, bossSoakRamp: 8, eliteDoorHP: 40, eliteDoorT: 20,
   // Wyrmfall 7.4
   wyrmT: 720, wyrmD0: 0.005, wyrmDbl: 30, staggerDmg: 1800, staggerCap: 45, mawRadius: 4, ringShare: 0.5,
   rockRate: 0.12, rockPct: 0.12,

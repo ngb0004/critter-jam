@@ -5,6 +5,8 @@
  *    kept at ~400 enemies, ~300 projectiles and ~500 gems (plus zones and telegraphs). The rig steps and
  *    tops up its own world; the live run is never touched (presentation still never writes the game World).
  *    `window.__delveStress(false)` returns to the live world. `window.__delveRender.stats()` returns numbers.
+ *  - a warp rig for look checks: `window.__delveWarp(sec, spec?, day?)` builds a PRIVATE guarded bot world, fast-steps
+ *    it to `sec` and then draws it at 1 tick per frame (the Core, a boss, the Wyrmfall without a 12-minute wait).
  */
 import { seedForDay } from '../core/daily';
 import { encodeInput } from '../core/input';
@@ -17,6 +19,7 @@ import { spawnProjectile } from '../sim/projectiles';
 import { dropGem } from '../sim/xp';
 import { spawnZone } from '../sim/zones';
 import { addTelegraph } from '../sim/hazards';
+import { botChoose, botInput } from '../bot/bot';
 
 export const DEBUG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
@@ -105,6 +108,32 @@ export class StressRig {
       const t = Math.random() * Math.PI * 2;
       addTelegraph(w, TG_SHAPE.CIRCLE, TG_COLOR.RED, px + Math.cos(t) * 6, py + Math.sin(t) * 6, 2.5, 1.2, 0, 0, -1);
     }
+    return w;
+  }
+}
+
+/** A private guarded bot run, fast-forwarded to a moment, then stepped once per frame (look checks / screenshots). */
+export class WarpRig {
+  readonly w: World;
+  frozen = false;
+  constructor(sec: number, spec = 'ember', day = 319) {
+    const mods = buildModifiers('', '');
+    mods.tags.add('debug-guard');
+    const w = (this.w = createWorld(seedForDay(day), spec as Parameters<typeof createWorld>[1], mods));
+    const end = Math.round(sec * 60);
+    let guard = 0;
+    while (w.tick < end && !w.over && guard++ < end * 4) {
+      if (w.offer.open) choose(w, botChoose(w));
+      else step(w, botInput(w));
+      if (w.events.n > 4000) w.events.clear();
+    }
+    w.events.clear();
+  }
+  update(): World {
+    const w = this.w;
+    if (this.frozen || w.over) return w;
+    if (w.offer.open) choose(w, botChoose(w));
+    else step(w, botInput(w));
     return w;
   }
 }

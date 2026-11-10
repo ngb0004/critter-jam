@@ -18,7 +18,8 @@ export const LAYERS: readonly LayerDef[] = [
     enemies: [['bat', 3], ['shroom', 3], ['slime', 2], ['golem', 2]],
     palette: { floor: 0x2a1a30, wall: 0x4a2558, fog: 0x12081a, light: 0xffa8ec, accent: 0xff7ad9 } },
   { index: 5, name: 'Ember Forge', biome: 'forge', boss: 'anvilKing',
-    enemies: [['beetle', 3], ['golem', 3], ['shroom', 2], ['bat', 2]],
+    // BOT v0.2: golem weight 3 -> 2 (+1 slime): the jump in mass at 4:00 piled weak builds into the first 20 s of layer 5
+    enemies: [['beetle', 3], ['golem', 2], ['shroom', 2], ['bat', 2], ['slime', 1]],
     palette: { floor: 0x2e1410, wall: 0x5a1e14, fog: 0x140705, light: 0xff8a5c, accent: 0xff4d3d } },
   { index: 6, name: 'The Core', biome: 'core', boss: null,
     enemies: [['bat', 3], ['slime', 2], ['beetle', 2], ['shroom', 2], ['golem', 2]],

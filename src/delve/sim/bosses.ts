@@ -4,8 +4,9 @@
  * - One boss per layer, spawned at second 40 of layers 1-5 with FIXED HP (BAL.bossHP x Omen), never
  *   rubber-banded. An unkilled boss carries over (it does not despawn), so several can be alive; on
  *   entering the Core each carried boss's remaining HP is capped at 50% of its max.
- * - Damage soak (spec 3.1 "the boss soaks 50% of your damage"): while a boss is alive and within 18 m,
- *   damage to trash is DIVERTED, not duplicated: trash takes x(1 - SOAK_SHARE) (damage.ts reads
+ * - Damage soak (spec 3.1 "the boss soaks 50% of your damage"; BAL.bossSoak, 10% since BOT v0.2, ramped in over
+ *   BAL.bossSoakRamp s): while a boss is alive and within 18 m,
+ *   damage to trash is DIVERTED, not duplicated: trash takes x(1 - BAL.bossSoak) (damage.ts reads
  *   `divert`) and the diverted part lands on the nearest boss next tick, so trash clearing drops while a
  *   boss is up. The Wyrm maw ring uses the same mechanism (hazards.ts). Damage accounting: measured at
  *   the start of updateBosses from w.score.totalDamage, committed at the end of updateHazards
@@ -17,7 +18,7 @@
  *     beam   three beams from the boss that reflect once off the arena wall.
  *   The Foreman slams; Sporemother slams + spores; the Drowned Engine charges; the Prism Warden beams +
  *   spores; the Anvil King cycles all four.
- * - Soft enrage: after 20 s alive the volley rate ramps to 2.5x over 40 s (speed +30% at full).
+ * - Soft enrage: after BAL.enrageStart (25 s) alive the volley rate ramps to 2.5x over BAL.enrageLen (60 s) (speed +30% at full).
  * - Kill reward: 0.6 level of XP, 25% max HP healed over the next seconds (inside the heal cap), a talent pick (OK.TALENT), and a chest (EV.CHEST a = 0, then
  *   OK.DOOR: BUILD shows Relic / Forge / Elite). The Elite door calls startEliteDoor(); clearing the
  *   guardian within 20 s gives a 4-relic pick (OK.RELIC, `relicChoices` = 4) plus BUILD's forge().
@@ -44,11 +45,16 @@ import { forge } from './build';
 import { queueHeal } from './player';
 
 const NB = 5;
-/** Share of off-boss damage diverted onto a nearby live boss (trash takes the rest). */
-export const SOAK_SHARE = 0.5;
+// The soak share is read from BAL.bossSoak at use (FIX v0.2: the old module-level `SOAK_SHARE = BAL.bossSoak` copy was
+// captured once at load, so `delve-pop --set bossSoak=...` sweeps never reached it; nothing read it any more).
 const SOAK_RANGE = 18;
 /** Share of max HP healed (through the heal cap) on each boss kill. */
 export const BOSS_KILL_HEAL = 0.25;
+/**
+ * Boss pattern damage (fraction of max HP). The per-pattern numbers below are relative to the v1 reference
+ * BAL.bossBurst 0.13; BAL.bossBurst scales them all (v0.2: bosses live 20-30 s now, so each hit is softer).
+ */
+const bossPct = (x: number): number => (x * BAL.bossBurst) / 0.13;
 /** Seconds between volleys at enrage 1, per boss. */
 const VOLLEY = [4.4, 4.8, 5.0, 5.0, 4.0];
 /** Preferred distance to the player (0 = chase), per boss. */
@@ -175,6 +181,7 @@ export function updateBosses(w: World): void {
   let live = 0;
   let nearest = -1;
   let nearestD = SOAK_RANGE * SOAK_RANGE;
+  let nearestK = -1;
   b.active = -1;
   let newest = -1;
   for (let k = 0; k < NB; k++) {
@@ -195,6 +202,7 @@ export function updateBosses(w: World): void {
     if (d2 < nearestD) {
       nearestD = d2;
       nearest = i;
+      nearestK = k;
     }
   }
   b.liveCount = live;
@@ -205,7 +213,10 @@ export function updateBosses(w: World): void {
     dealDamage(w, nearest, diverted / mightDiv(w), SRC.OTHER, DMG.NO_STAMP | DMG.DOT | DMG.IGNORE_ARMOR);
   }
   if (nearest >= 0) {
-    b.divert = SOAK_SHARE;
+    // v0.2: the soak ramps in over BAL.bossSoakRamp s after the spawn (a full 50% cut in trash clearing at the
+    // shared :40 tick piled weak builds into one 10 s bucket right after each boss arrived)
+    const age = (w.tick - b.spawnTick[nearestK]) * DT;
+    b.divert = BAL.bossSoakRamp > 0 && age < BAL.bossSoakRamp ? (BAL.bossSoak * age) / BAL.bossSoakRamp : BAL.bossSoak;
     b.divertSrc = 1;
   }
 
@@ -385,7 +396,7 @@ function patSlamAt(w: World, k: number, i: number, x: number, y: number, r: numb
     x *= s;
     y *= s;
   }
-  const tgi = addTelegraphCat(w, TG_SHAPE.CIRCLE, TG_COLOR.RED, x, y, r, wind * windMul(w), 0.12, TGF.BOSS, i, TGC.BOSS, 0);
+  const tgi = addTelegraphCat(w, TG_SHAPE.CIRCLE, TG_COLOR.RED, x, y, r, wind * windMul(w), bossPct(0.12), TGF.BOSS, i, TGC.BOSS, 0);
   if (tgi >= 0 && leap) {
     const b = w.boss;
     b.mode[k] = HOLD;
@@ -406,7 +417,7 @@ function patSlam(w: World, k: number, i: number, enr: number): void {
   patSlamAt(w, k, i, x, y, r, 1.3, true);
   if (enr >= 2) {
     // enraged: an aftershock ring around the landing point
-    const t2 = addTelegraphCat(w, TG_SHAPE.RING, TG_COLOR.RED, x, y, r + 2.6, 1.9 * windMul(w), 0.1, TGF.BOSS, i, TGC.BOSS, 0);
+    const t2 = addTelegraphCat(w, TG_SHAPE.RING, TG_COLOR.RED, x, y, r + 2.6, 1.9 * windMul(w), bossPct(0.1), TGF.BOSS, i, TGC.BOSS, 0);
     if (t2 >= 0) w.tg.arc[t2] = r + 0.6;
   }
 }
@@ -428,7 +439,7 @@ function patSpores(w: World, i: number, enr: number): void {
       x = p.x + cosIdx(a) * d;
       y = p.y + sinIdx(a) * d;
     }
-    addTelegraphCat(w, TG_SHAPE.CIRCLE, TG_COLOR.RED, x, y, 1.6, 1.25 * windMul(w), 0.06, TGF.BOSS | TGF.LINGER_HURTS, i, TGC.BOSS, 4);
+    addTelegraphCat(w, TG_SHAPE.CIRCLE, TG_COLOR.RED, x, y, 1.6, 1.25 * windMul(w), bossPct(0.06), TGF.BOSS | TGF.LINGER_HURTS, i, TGC.BOSS, 4);
   }
 }
 
@@ -457,7 +468,7 @@ function patCharge(w: World, k: number, i: number): void {
   if (len < 4) len = 4;
   const ex = en.x[i] + ux * len;
   const ey = en.y[i] + uy * len;
-  const tgi = addTelegraphCat(w, TG_SHAPE.LANE, TG_COLOR.RED, en.x[i], en.y[i], 1.3, 1.4 * windMul(w), 0.16, TGF.BOSS, i, TGC.BOSS, 0);
+  const tgi = addTelegraphCat(w, TG_SHAPE.LANE, TG_COLOR.RED, en.x[i], en.y[i], 1.3, 1.4 * windMul(w), bossPct(0.16), TGF.BOSS, i, TGC.BOSS, 0);
   if (tgi < 0) return;
   w.tg.x2[tgi] = ex;
   w.tg.y2[tgi] = ey;
@@ -487,7 +498,7 @@ function patBeam(w: World, k: number, i: number): void {
     const l1 = toWall(en.x[i], en.y[i], ux, uy, R);
     const hx = en.x[i] + ux * l1;
     const hy = en.y[i] + uy * l1;
-    const t1 = addTelegraphCat(w, TG_SHAPE.LANE, TG_COLOR.RED, en.x[i], en.y[i], 0.8, 1.5 * windMul(w), 0.13, TGF.BOSS, i, TGC.BOSS, 0);
+    const t1 = addTelegraphCat(w, TG_SHAPE.LANE, TG_COLOR.RED, en.x[i], en.y[i], 0.8, 1.5 * windMul(w), bossPct(0.13), TGF.BOSS, i, TGC.BOSS, 0);
     if (t1 < 0) continue;
     w.tg.x2[t1] = hx;
     w.tg.y2[t1] = hy;
@@ -502,7 +513,7 @@ function patBeam(w: World, k: number, i: number): void {
     const sy = hy - ny * 0.05;
     let l2 = toWall(sx, sy, rx, ry, R);
     if (l2 > 16) l2 = 16;
-    const t2 = addTelegraphCat(w, TG_SHAPE.LANE, TG_COLOR.RED, sx, sy, 0.8, 1.5 * windMul(w), 0.13, TGF.BOSS, i, TGC.BOSS, 0);
+    const t2 = addTelegraphCat(w, TG_SHAPE.LANE, TG_COLOR.RED, sx, sy, 0.8, 1.5 * windMul(w), bossPct(0.13), TGF.BOSS, i, TGC.BOSS, 0);
     if (t2 >= 0) {
       w.tg.x2[t2] = sx + rx * l2;
       w.tg.y2[t2] = sy + ry * l2;

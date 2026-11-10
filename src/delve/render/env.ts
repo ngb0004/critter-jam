@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import { layerDef } from '../content/layers';
-import { addInst, poolMaterial, toyMaterial, uRim } from './materials';
+import { addInst, poolMaterial, toyMaterial, uRim, uRimCritter } from './materials';
 import {
   crystalGeo, floorQuad, gearGeo, lampPostGeo, mushroomGeo, pipeGeo, railGeo, rockGeo, stalagmiteGeo, timberGeo,
 } from './geo';
@@ -199,10 +199,11 @@ export class CaveEnv {
     this.hemi = new THREE.HemisphereLight(0x7a5a40, 0x100808, 0.5);
     scene.add(this.hemi);
 
-    const wallMat = toyMaterial(0, { rim: 0.18 });
+    // walls and props sink on the camera side of the delver (shader cutaway around uFocus), the far side stays tall
+    const wallMat = toyMaterial(0, { rim: 0.18, cutaway: true });
     this.walls = this.makeSet(rockGeo(), wallMat, 170);
     this.stalag = this.makeSet(stalagmiteGeo(), wallMat, 70);
-    this.propMat = toyMaterial(0, { rim: 0.5 });
+    this.propMat = toyMaterial(0, { rim: 0.5, cutaway: true });
     const pm = this.propMat;
     this.props = {
       rock: this.makeSet(rockGeo(), pm, 60),
@@ -414,6 +415,8 @@ export class CaveEnv {
     if (scene.fog instanceof THREE.Fog) scene.fog.color.setHex(look.fog);
     if (scene.background instanceof THREE.Color) scene.background.setHex(look.fog);
     uRim.value.setHex(look.rim ?? look.accent).multiplyScalar(0.55);
+    // critters get a greyer, dimmer rim so their own colours survive (cream shrooms read cream, not lavender, in the Core)
+    uRimCritter.value.setHex(look.rim ?? look.accent).lerp(new THREE.Color(0x9a9090), 0.55).multiplyScalar(0.42);
     this.retint();
   }
 

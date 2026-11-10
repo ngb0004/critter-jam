@@ -17,8 +17,42 @@ export const uTime = { value: 0 };
 /** Shared rim-light colour (the layer accent). */
 export const uRim = { value: new THREE.Color(0x553366) };
 
+/** Rim colour for critters: the layer accent, desaturated so cream / teal critters keep their own colour (QA: lavender shrooms). */
+export const uRimCritter = { value: new THREE.Color(0x553366) };
+/**
+ * Readability anchors, set by the renderer once per frame (world space, three.js axes):
+ *  - uAnchor: the delver's chest; `onTop` materials squeeze their depth into a band in front of everything else,
+ *    keeping their own depth order around this point (the delver is never buried under the crowd).
+ *  - uFocus: the delver's floor position (x, z); `cutaway` materials flatten instances on the camera side of it.
+ *  - uNear: (x, z, strength, radius); `nearDim` materials darken and desaturate within `radius` of the delver.
+ */
+export const uAnchor = { value: new THREE.Vector3() };
+export const uFocus = { value: new THREE.Vector2() };
+export const uNear = { value: new THREE.Vector4(0, 0, 0, 3) };
+
+export interface ToyOpts {
+  rim?: number;
+  transparent?: boolean;
+  /** Use the critter rim colour (uRimCritter) instead of the layer accent. */
+  critterRim?: boolean;
+  /** Darken + desaturate near the delver (critters), so the delver's silhouette pops out of the blob. */
+  nearDim?: boolean;
+  /** Camera-side cutaway: flatten instances between the camera and the delver (walls, stalagmites, edge props). */
+  cutaway?: boolean;
+  /** Depth band in front of the scene (NDC z); used for the delver (-0.985) and its outline hull (-0.955). */
+  onTop?: number;
+}
+
+/** GLSL: squeeze depth into a near band, keeping metric depth order around uAnchor. */
+const ON_TOP_GLSL = (band: number): string => /* glsl */ `
+{
+  vec4 _av = viewMatrix * vec4(uAnchor, 1.0);
+  float _dz = _av.z - mvPosition.z; // metres behind the anchor
+  gl_Position.z = clamp(${band.toFixed(4)} + _dz * 0.004, -0.999, 0.999) * gl_Position.w;
+}`;
+
 /** aInst layout: x = phase, y = flash (0..1), z = bend amplitude, w = extra glow. */
-export function toyMaterial(freq: number, opts: { rim?: number; transparent?: boolean } = {}): THREE.MeshLambertMaterial {
+export function toyMaterial(freq: number, opts: ToyOpts = {}): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   if (opts.transparent) {
     m.transparent = true;
@@ -26,11 +60,15 @@ export function toyMaterial(freq: number, opts: { rim?: number; transparent?: bo
   }
   const uFreq = { value: freq };
   const uRimK = { value: opts.rim ?? 1 };
+  const onTop = opts.onTop !== undefined;
   m.onBeforeCompile = (s) => {
     s.uniforms.uTime = uTime;
     s.uniforms.uFreq = uFreq;
-    s.uniforms.uRim = uRim;
+    s.uniforms.uRim = opts.critterRim ? uRimCritter : uRim;
     s.uniforms.uRimK = uRimK;
+    s.uniforms.uAnchor = uAnchor;
+    s.uniforms.uFocus = uFocus;
+    s.uniforms.uNear = uNear;
     s.vertexShader = s.vertexShader
       .replace(
         '#include <common>',
@@ -40,8 +78,11 @@ attribute vec3 aBend;
 attribute vec4 aInst;
 uniform float uTime;
 uniform float uFreq;
+uniform vec3 uAnchor;
+uniform vec2 uFocus;
 varying vec2 vKeep;
-varying vec2 vFx;`,
+varying vec2 vFx;
+${opts.nearDim ? 'varying vec2 vWXZ;' : ''}`,
       )
       .replace(
         '#include <color_vertex>',
@@ -55,21 +96,60 @@ vFx = aInst.yw;`,
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-transformed += aBend * (sin(uTime * uFreq + aInst.x) * aInst.z);`,
+transformed += aBend * (sin(uTime * uFreq + aInst.x) * aInst.z);
+${opts.cutaway ? `
+#ifdef USE_INSTANCING
+{
+  // walls on the camera side of the delver (and level with it) sink to a low rim; the far side stays tall
+  vec3 _io = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vec2 _d = _io.xz - uFocus;
+  // keep tall only what is clearly up-screen of the delver (the far side); sides and the camera side sink
+  float _near = 1.0 - smoothstep(10.0, 17.0, length(_d));
+  float _far = smoothstep(2.0, 7.0, -_d.y - 0.6 * abs(_d.x));
+  transformed.y *= 1.0 - 0.78 * _near * (1.0 - _far);
+}
+#endif` : ''}`,
       );
+    if (opts.nearDim) {
+      s.vertexShader = s.vertexShader.replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+{
+  vec4 _wp = vec4(transformed, 1.0);
+  #ifdef USE_INSTANCING
+  _wp = instanceMatrix * _wp;
+  #endif
+  vWXZ = (modelMatrix * _wp).xz;
+}`,
+      );
+    }
+    if (onTop) s.vertexShader = s.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>' + ON_TOP_GLSL(opts.onTop!));
     s.fragmentShader = s.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
 uniform vec3 uRim;
 uniform float uRimK;
+uniform vec4 uNear;
 varying vec2 vKeep;
-varying vec2 vFx;`,
+varying vec2 vFx;
+${opts.nearDim ? 'varying vec2 vWXZ;' : ''}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.92), vFx.x * 0.45);`,
+float _dim = 0.0;
+${opts.nearDim ? `
+{
+  // close to the delver: darker and greyer, so the delver (bright, outlined) reads against the crowd
+  float _d = length(vWXZ - uNear.xy);
+  _dim = (1.0 - smoothstep(uNear.w * 0.45, uNear.w, _d)) * uNear.z;
+  float _l = dot(diffuseColor.rgb, vec3(0.3, 0.5, 0.2));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(_l) * 0.55, _dim);
+}` : ''}
+// hit flash (whitening); muted next to the delver so constant hits do not turn the crowd around it white
+float _fl = vFx.x * (1.0 - _dim * 1.1);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.92), _fl * 0.45);`,
       )
       .replace(
         '#include <emissivemap_fragment>',
@@ -77,14 +157,57 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.97, 0.92), vFx.x * 0.45);`,
 {
   float nv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
   float rim = pow(1.0 - nv, 2.5);
-  totalEmissiveRadiance += uRim * (rim * uRimK) * (1.0 - vKeep.y);
-  totalEmissiveRadiance += diffuseColor.rgb * (vKeep.y + vFx.y);
-  totalEmissiveRadiance += vec3(1.0, 0.85, 0.7) * vFx.x * 0.3;
+  totalEmissiveRadiance += uRim * (rim * uRimK) * (1.0 - vKeep.y) * (1.0 - _dim * 0.7);
+  totalEmissiveRadiance += diffuseColor.rgb * (vKeep.y + vFx.y) * (1.0 - _dim * 0.6);
+  totalEmissiveRadiance += vec3(1.0, 0.85, 0.7) * max(_fl, 0.0) * 0.3;
+  ${onTop ? 'totalEmissiveRadiance += diffuseColor.rgb * 0.38; // self-lit: the delver never sinks into the dark' : ''}
 }`,
       );
   };
-  m.customProgramCacheKey = () => 'toy' + (opts.transparent ? 't' : '');
+  const key = 'toy' + (opts.transparent ? 't' : '') + (opts.critterRim ? 'c' : '') + (opts.nearDim ? 'n' : '') + (opts.cutaway ? 'w' : '') + (onTop ? 'o' + opts.onTop : '');
+  m.customProgramCacheKey = () => key;
   return m;
+}
+
+/** Put a built-in material (MeshBasic) into an on-top depth band (see uAnchor), e.g. the delver's ground ring. */
+export function onTopBasic<M extends THREE.Material>(m: M, band: number): M {
+  m.onBeforeCompile = (s) => {
+    s.uniforms.uAnchor = uAnchor;
+    s.vertexShader = s.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uAnchor;')
+      .replace('#include <project_vertex>', '#include <project_vertex>' + ON_TOP_GLSL(band));
+  };
+  m.customProgramCacheKey = () => 'ontop' + band;
+  return m;
+}
+
+/**
+ * Outline hull for the delver: the same geometry pushed outward and drawn back faces only in a flat colour, in a depth
+ * band just behind the delver's own band (so it shows as a bright rim around the silhouette, over every critter).
+ */
+export function hullMaterial(band: number, grow: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { uAnchor, uCol: { value: new THREE.Color(0xfff1c8) }, uGrow: { value: grow }, uA: { value: 1 } },
+    vertexShader: /* glsl */ `
+uniform vec3 uAnchor;
+uniform float uGrow;
+void main() {
+  vec3 dir = normalize(position - vec3(0.0, 0.62, 0.0) + vec3(0.0001));
+  vec3 p = position + (normalize(normal) * 0.5 + dir * 0.7) * uGrow;
+  vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  ${ON_TOP_GLSL(band)}
+}`,
+    fragmentShader: /* glsl */ `
+uniform vec3 uCol;
+uniform float uA;
+void main() {
+  gl_FragColor = vec4(uCol, uA);
+  #include <colorspace_fragment>
+}`,
+    side: THREE.BackSide,
+    toneMapped: false,
+  });
 }
 
 /** Give an instanced geometry its per-instance aInst attribute. */
@@ -220,7 +343,7 @@ void main() {
     // aura pulse: a bright ring sweeping outward
     float prog = 1.0 - life;
     float rr = mix(0.25, 1.0, sqrt(prog));
-    a = exp(-pow((d - rr) * 10.0, 2.0)) * 0.55 + (1.0 - smoothstep(0.0, rr, d)) * 0.05;
+    a = exp(-pow((d - rr) * 10.0, 2.0)) * 0.45 + (1.0 - smoothstep(0.0, rr, d)) * 0.03;
     a *= (1.0 - prog * prog) * (1.0 + 0.6 * vB.w);
   } else {
     float fade = smoothstep(0.0, 0.25, life) * smoothstep(0.0, 0.08, vB.y + 0.04);
@@ -241,15 +364,19 @@ void main() {
       n = vnoise(q * 1.2 + vec2(t * 0.7, t * 0.4));
       a = 0.25 + n * 0.5;
     }
-    a = (a * 0.6 * (1.0 - smoothstep(0.7, 1.0, d)) + edge * 0.55) * fade;
-    // rank (vB.w 0..1): denser, hotter; rank 5 adds a turning ring of runes inside the rim
+    // v0.2 review: friendly ground must never read as a hazard. Hazards are a solid wash with a SOLID rim; player zones
+    // are a faint haze with a DASHED rim (about 0.4x the old interior fill), so red floor under a pool stays readable.
+    float angZ = atan(p.y, p.x);
+    float dashes = max(8.0, floor(vB.x * 5.0));
+    float dashZ = step(0.42, fract(angZ * dashes / 6.2832 + t * 0.05));
     float rk = vB.w;
-    a *= 1.0 + 0.55 * rk;
+    a = (a * 0.24 * (1.0 + 0.25 * rk) * (1.0 - smoothstep(0.7, 1.0, d)) + edge * 0.6 * dashZ) * fade;
+    // rank (vB.w 0..1): a little denser; rank 5 adds a turning ring of runes inside the rim
     if (rk > 0.99) {
       float ang = atan(p.y, p.x);
       float dash = step(0.45, fract(ang * 2.546 + uTime * 0.35 * (vA.z > 0.5 ? 1.0 : -1.0)));
       float band = smoothstep(0.035, 0.0, abs(d - 0.86));
-      a += band * dash * 0.9 * fade;
+      a += band * dash * 0.55 * fade;
     }
   }
   gl_FragColor = vec4(vCol * a, a);
@@ -322,12 +449,23 @@ void main() {
   float a;
   vec3 col = vCol;
 #ifdef TG_OVERLAY
-  // rim only, drawn over critters and walls; fades out once resolved
-  if (after >= 0.0 && !maw) discard;
-  float rim = 1.0 - smoothstep(0.0, 0.09, sd);
-  a = rim * (maw ? 0.55 : 0.5 + 0.35 * prog);
+  // drawn over critters and walls: the rim, a light wash of the area and the filling front, so a warning under a
+  // crowd still reads as a red AREA; the impact flash also shows through
+  float rimO = 1.0 - smoothstep(0.0, 0.11, sd);
+  if (maw) {
+    a = rimO * 0.55;
+  } else if (after < 0.0) {
+    float innerO = 1.0 - depth;
+    float frontO = 1.0 - smoothstep(0.0, 0.035, abs(innerO - prog));
+    a = rimO * (0.6 + 0.35 * prog) + 0.13 + 0.1 * prog + frontO * 0.35;
+    col = mix(col, vec3(1.0, 0.9, 0.85), frontO * 0.6);
+  } else {
+    float fl = 1.0 - smoothstep(0.05, 0.3, after);
+    a = fl * 0.75;
+    col = mix(col, vec3(1.0, 0.95, 0.85), fl);
+  }
   if (a < 0.01) discard;
-  gl_FragColor = vec4(mix(col, vec3(1.0), 0.25), a);
+  gl_FragColor = vec4(mix(col, vec3(1.0), 0.2 * rimO), clamp(a, 0.0, 1.0));
   #include <colorspace_fragment>
   return;
 #endif
@@ -335,21 +473,25 @@ void main() {
     float pulse = 0.5 + 0.5 * sin(uTime * 4.0 - depth * 6.0);
     a = 0.18 + edge * 0.9 + pulse * 0.25 * depth;
   } else if (after < 0.0) {
-    // fill grows from the middle outward: inner = 0 at the middle, 1 at the rim
-    float inner = 1.0 - depth;
+    // danger from frame 0: the WHOLE area is a solid red wash with a thick bright rim. A brighter fill grows from the
+    // middle outward behind a white-hot front that reaches the rim at impact; the last 20% throbs.
+    float inner = 1.0 - depth; // 0 at the middle, 1 at the rim
     float filled = step(inner, prog);
-    float front = 1.0 - smoothstep(0.0, 0.05, abs(inner - prog)) ;
+    float front = 1.0 - smoothstep(0.0, 0.045, abs(inner - prog));
     float stripes = 0.5 + 0.5 * sin((p.x + p.y) * 5.0 - uTime * 6.0);
-    float rim = 1.0 - smoothstep(0.0, 0.22, sd);
-    a = 0.3 + prog * 0.12 + stripes * 0.06 + rim * 0.95 + filled * (0.3 + prog * 0.2) + front * 0.4;
-    col = mix(col, vec3(1.0, 0.8, 0.75), rim * 0.35 + front * 0.3);
+    float rim = 1.0 - smoothstep(0.0, 0.26, sd);
+    float urgent = smoothstep(0.8, 1.0, prog) * (0.5 + 0.5 * sin(uTime * 28.0));
+    a = 0.44 + prog * 0.12 + stripes * 0.05 + rim * 0.9 + filled * (0.18 + prog * 0.14) + front * 0.45 + urgent * 0.15;
+    col = mix(col * 0.82, col, filled);
+    col = mix(col, vec3(1.0, 0.82, 0.76), rim * 0.4 + front * 0.55 + urgent * 0.2);
   } else {
-    // just resolved: flash, then either fade or keep a pulsing linger puddle
-    float flash = 1.0 - smoothstep(0.0, 0.25, after);
+    // impact: a white-hot flash over the whole area, a red afterglow, then fade or a pulsing linger puddle
+    float flash = 1.0 - smoothstep(0.06, 0.32, after);
+    float glowA = 1.0 - smoothstep(0.08, 0.35, after); // v0.2: shorter afterglow (lingering rings read as new hazards)
     float lingerK = mod(vB.w, 2.0) > 0.5 ? 1.0 : 0.0;
     float pulse = 0.5 + 0.5 * sin(uTime * 7.0 + depth * 8.0);
-    a = flash * 0.9 + lingerK * (0.3 + 0.2 * pulse + edge * 0.6);
-    col = mix(col, vec3(1.0), flash * 0.6);
+    a = flash * 0.95 + glowA * 0.35 * (1.0 - lingerK) + lingerK * (0.3 + 0.2 * pulse + edge * 0.6);
+    col = mix(col, vec3(1.0, 0.96, 0.88), flash * 0.85);
   }
   gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
   #include <colorspace_fragment>
@@ -374,7 +516,7 @@ void main() {
   if (d > 1.0) discard;
   float th = max(0.02, vA.y);
   float r = smoothstep(1.0 - th, 1.0 - th * 0.35, d) * (1.0 - smoothstep(0.96, 1.0, d));
-  float inner = (1.0 - smoothstep(0.0, 1.0, d)) * 0.15;
+  float inner = (1.0 - smoothstep(0.0, 1.0, d)) * 0.07; // v0.2: half the disc fill (filled discs read as hazards)
   float a = (r + inner) * (1.0 - vA.x) * vA.z;
   gl_FragColor = vec4(vCol * a, 1.0);
   #include <colorspace_fragment>
@@ -484,7 +626,7 @@ void main() {
   vec2 s = (vUv - mix(vec2(0.5), uSpot, 0.6)) * vec2(uAspect, 1.0);
   float r = smoothstep(0.12, 0.85, length(s));
   vec3 g = mix(uCentre, uEdge, r);
-  g = mix(g, g * vec3(1.05, 0.62, 0.55), uPump * r);
+  g = mix(g, g * vec3(0.84, 0.72, 0.9), uPump * r); // heartbeat squeeze: darker, violet (red is reserved for "move")
   gl_FragColor = vec4(clamp(g * 0.5, 0.0, 1.0), 1.0);
 }`,
     transparent: true,

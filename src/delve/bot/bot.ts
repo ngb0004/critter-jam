@@ -100,7 +100,7 @@ export function deriveSkill(s: BotSkill): Derived {
   return {
     notice: s.notice ?? 0.72 + 0.27 * e,
     reactTicks: s.reactTicks ?? Math.round(30 - 22 * e),
-    kiteR: s.kiteR ?? 0.8 + 1.8 * e,
+    kiteR: s.kiteR ?? 0.6 + 2.0 * e,
     decideEvery: s.decideEvery ?? Math.max(2, Math.round(12 - 9 * e)),
     noise: s.noise ?? 1.6 * (1 - e) * (1 - e) + 0.05,
     dashUse: s.dashUse ?? clamp01(-0.1 + 1.05 * e),
@@ -110,7 +110,7 @@ export function deriveSkill(s: BotSkill): Derived {
     horizon: s.horizon ?? 0.25 + 0.85 * e,
     flow: s.flow ?? 0.2 + 1.6 * e,
     engage: s.engage ?? 1.2 * e,
-    crowdAware: s.crowdAware ?? 0.3 + 0.7 * e,
+    crowdAware: s.crowdAware ?? 0.15 + 0.85 * e,
   };
 }
 

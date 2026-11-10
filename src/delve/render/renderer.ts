@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { DT } from '../core/constants';
 import { EV, type EventQueue } from '../core/events';
-import { EF, SRC } from '../core/types';
+import { EF, SRC, TG_SHAPE } from '../core/types';
 import type { World } from '../core/world';
 import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
@@ -26,7 +26,7 @@ import { CaveEnv, lookFor, type Look } from './env';
 import { Beams, DamageNumbers, Flashes, Particles, Rings, SpriteBatch } from './fx';
 import { uTime } from './materials';
 import { Post } from './post';
-import { DEBUG, DebugHud, StressRig } from './debug';
+import { DEBUG, DebugHud, StressRig, WarpRig } from './debug';
 import { FX_COLORS, TAU, clamp01, coreHeartbeat, damp, mixHex } from './util';
 
 /**
@@ -40,7 +40,9 @@ const GRADES: ReadonlyArray<readonly [readonly [number, number, number], readonl
   [[0.92, 1.0, 1.1], [0.74, 0.9, 1.16]], // 3 Flooded Works: cold blue
   [[1.07, 0.97, 1.07], [0.98, 0.76, 1.08]], // 4 Crystal Vault: pink-violet
   [[1.1, 0.99, 0.86], [1.04, 0.7, 0.62]], // 5 Ember Forge: red-orange
-  [[1.06, 0.97, 0.92], [0.92, 0.72, 1.02]], // 6 the Core: violet edges (red is reserved for "move")
+  // 6 the Core: cool, near-neutral edges. The v0.1 magenta cut (green x0.72) turned cream shrooms pink and violet clumps
+  // red-pink next to the red warnings; red is reserved for "move"
+  [[1.04, 1.0, 0.96], [0.84, 0.8, 0.98]],
 ];
 
 export interface RenderOptions {
@@ -92,7 +94,7 @@ export class DelveRenderer {
   private readonly flashes = new Flashes(256);
   private readonly rings = new Rings(96);
   private readonly beams = new Beams(320);
-  private readonly numbers = new DamageNumbers(96);
+  private readonly numbers = new DamageNumbers(32);
   private readonly post: Post;
   private readonly lantern: THREE.PointLight;
   private readonly fxLight: THREE.PointLight;
@@ -141,6 +143,8 @@ export class DelveRenderer {
   private wyrmFrame = 0;
   private wyrmNear = 0;
   private wyrmNearS = 0;
+  private wyrmLean = 0;
+  private wyrmPullS = 0;
   private aspect = 1;
   private punch = 0;
   private interpPX = 0;
@@ -190,6 +194,12 @@ export class DelveRenderer {
       g.__delveShow = (fn: (() => World) | null): void => {
         this.override = fn;
         this.stressW = null;
+      };
+      g.__delveWarp = (sec: number, spec?: string, day?: number): WarpRig => {
+        const rig = new WarpRig(sec, spec, day);
+        this.stressW = null;
+        this.override = () => rig.update();
+        return rig;
       };
       g.__delveRender = this;
     }
@@ -274,14 +284,17 @@ export class DelveRenderer {
     this.actors.fxScale = fxs;
     this.handleEvents(w);
     this.moments(w, dt);
-    // damage numbers refill at ~36/s (max 10 banked): a late-game crowd reads as numbers, not soup
-    this.numbers.budget = this.opts.damageNumbers ? Math.min(10, Math.max(0, this.numbers.budget) + dt * 36) : 0;
+    // new damage numbers refill at ~12/s (max 4 banked); further hits fold into live numbers (QA: number clutter)
+    this.numbers.budget = this.opts.damageNumbers ? Math.min(4, Math.max(0, this.numbers.budget) + dt * 12) : 0;
+    this.numbers.px = this.interpPX;
+    this.numbers.py = this.interpPY;
 
     this.glows.begin();
     this.stars.begin();
     this.actors.update({
       w, alpha, dt, t: this.time, px: this.interpPX, py: this.interpPY,
       particles: this.particles, glows: this.glows, stars: this.stars, reducedMotion: this.opts.reducedMotion,
+      onImpact: this.onImpact,
     });
     if (this.actors.impacts > 0 && this.actors.impactNear < 7) this.addShake(0.22);
     this.ambient(w, dt);
@@ -421,7 +434,8 @@ export class DelveRenderer {
               if (splashes-- <= 0) break;
               // rank scales the burst: rank 5 adds a white shock ring, a hotter core and a fountain of embers
               const rk = src === SRC.RELIC ? 0 : rankK(w, src);
-              this.rings.add(x, y, 0.3, Math.max(0.6, v) * (1 + 0.12 * rk), 0.38 + 0.12 * rk, col, 1.0 + 0.7 * rk, 0.3 + 0.12 * rk);
+              // v0.2 review: thinner, shorter splash rings (wide filled tan discs read like hazards and buried the red floor)
+              this.rings.add(x, y, 0.3, Math.max(0.6, v) * (1 + 0.12 * rk), 0.3 + 0.1 * rk, col, 0.85 + 0.6 * rk, 0.18 + 0.1 * rk);
               // splash glow kept small and dim: dozens overlap in the Core and bloom turned them into white soup
               this.flashes.add(x, 0.5, y, v * 0.9 * (1 + 0.25 * rk), v * 0.45, 0.18 + 0.06 * rk, col, 0.28 + 0.22 * rk);
               if (sparks > 0) {
@@ -445,11 +459,10 @@ export class DelveRenderer {
               this.flashes.add(x, 0.8, y, crit ? 1.4 : 0.8, 0.3, 0.12, crit ? 0xfff0a0 : col, crit ? 1.1 : 0.55);
               if (sparks % 2 === 0) P.burst(x, 0.8, y, crit ? 6 : 2, 4, 2, col, 1.4, 0.22, 0.25, -8);
             }
-            if (this.opts.damageNumbers && v >= 1 && (!dot || Math.random() < 0.35)) {
-              const hex = crit ? 0xffd23a : dot ? mixHex(col, 0xffffff, 0.5) : 0xffffff;
-              // bigger hits read bigger (log scale), crits pop with a '!'
-              const big = Math.min(0.45, Math.max(0, Math.log10(Math.max(1, v)) - 1) * 0.22);
-              this.numbers.add(x, 1.4, y, v, hex, (crit ? 0.95 : dot ? 0.42 : 0.58) * (1 + big), crit ? 0.9 : dot ? 0.55 : 0.7, crit ? 1 : 0);
+            if (this.opts.damageNumbers && v >= 1) {
+              // aggregated per critter (hits within ~0.45 s add up), sized relative to the typical hit, capped by a budget
+              const hex = dot ? mixHex(col, 0xffffff, 0.5) : 0xffffff;
+              this.numbers.hit(E.a[i], x, 1.4, y, v, hex, crit, dot);
             }
           }
           break;
@@ -637,6 +650,23 @@ export class DelveRenderer {
     }
     E.n = 0;
   }
+
+  /**
+   * A hostile telegraph just landed. The sim frees non-lingering warnings ~0.1 s after impact, so the impact flash is
+   * drawn here: a white-hot filled flash over the area, a shock ring in the warning colour, and a glow.
+   */
+  private readonly onImpact = (x: number, y: number, r: number, shape: number, x2: number, y2: number, col: number): void => {
+    const k = this.opts.reducedMotion ? 0.6 : 1;
+    if (shape === TG_SHAPE.LANE) {
+      this.beams.add(x, y, x2, y2, 0.1, r * 2.1, 0.22, 0xfff0e0, 0.9 * k);
+      this.beams.add(x, y, x2, y2, 0.08, r * 2.8, 0.4, col, 0.7 * k);
+      return;
+    }
+    const R = Math.max(0.6, r);
+    this.rings.add(x, y, R * 0.85, R * 1.08, 0.3, 0xfff0e0, 1.5 * k, 1.0, 0.08);
+    this.rings.add(x, y, R, R * 1.45, 0.3, col, 1.5 * k, 0.16, 0.09); // 0.45 -> 0.3 s (v0.2 review: lingering rings)
+    this.flashes.add(x, 0.4, y, R * 1.6, R * 0.6, 0.22, mixHex(col, 0xffffff, 0.5), 0.7 * k);
+  };
 
   private flashCol(hex: number, k: number): void {
     if (k > this.flash) (this.post.overlay.uniforms.uFlashCol.value as THREE.Color).setHex(hex);
@@ -827,25 +857,35 @@ export class DelveRenderer {
     let wyrmPull = 0;
     this.wyrmNear = 0;
     if (this.wyrmFrame > 0.001) {
-      const mx = this.actors.wyrmVisible ? this.actors.wyrmMouthX : hz.mawX;
-      const my = this.actors.wyrmVisible ? this.actors.wyrmMouthY : hz.mawY;
+      // Frame the delver AND the Wyrm (v0.1: the head never made it on screen) by leaning toward the head and pulling
+      // back (up to +95%). The bright on-top delver + outline keeps the delver findable when it is small.
+      // aim at the head's floor point (what the HUD arrow tracks; the skull rises up-screen from it), else the maw
+      const hs = hz.headSlot;
+      const headOn = this.actors.wyrmVisible && hs >= 0 && hs < w.en.cap && w.en.alive[hs] === 1;
+      const mx = headOn ? w.en.x[hs] : hz.mawX;
+      const my = headOn ? w.en.y[hs] : hz.mawY;
       const dx = mx - tx, dy = my - ty;
-      const sep = Math.sqrt(dx * dx + dy * dy);
-      const near = clamp01(-dy / 12); // maw below the delver on screen
-      // QA: keep the delver in the central part of the frame (it got lost at the screen edge in the crowd), so the
-      // lean toward the maw is capped at ~3 m and the pull-back at +26%; the HUD arrow points at an off-screen ring
-      const b = (0.2 + 0.06 * near) * clamp01(sep / 6) * this.wyrmFrame;
-      let ox = dx * b, oy = dy * b;
-      const ol = Math.sqrt(ox * ox + oy * oy);
-      if (ol > 3) {
-        ox *= 3 / ol;
-        oy *= 3 / ol;
-      }
-      tx += ox;
-      ty += oy;
-      wyrmPull = this.wyrmFrame * Math.min(0.26, 0.1 + 0.22 * clamp01((sep - 6) / 16) + 0.06 * near);
+      const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+      const halfW = this.camDist * tanH * this.aspect;
+      // ground extent up-screen is longer than down-screen at this pitch; the head also stands ~3 m tall, which helps up-screen
+      const halfH = (this.camDist * tanH) / Math.sin(THREE.MathUtils.degToRad(52)) * (dy > 0 ? 1.05 : 0.8);
+      const ex = Math.abs(dx) / halfW, ey = Math.abs(dy) / halfH;
+      const need = Math.max(ex, ey); // separation in units of half-extent at the base zoom
+      // the head inside 52% of the (zoomed) half-extent (the skull and neck stand up-screen of that point), the delver
+      // inside 46% of it on the other side
+      const S = Math.min(1.95, Math.max(1, need / 0.98));
+      const lam = need > 1e-3 ? Math.min((0.46 * S) / need, Math.max(0, 1 - (0.52 * S) / need)) : 0;
+      const k = damp(2.2, dt);
+      this.wyrmLean += (lam * this.wyrmFrame - this.wyrmLean) * k;
+      this.wyrmPullS += ((S - 1) * this.wyrmFrame - this.wyrmPullS) * k;
+      tx += dx * this.wyrmLean;
+      ty += dy * this.wyrmLean;
+      wyrmPull = this.wyrmPullS;
       // head on the camera side: tip the camera toward top-down so the skull does not hide the delver
+      const sep = Math.sqrt(dx * dx + dy * dy);
       if (this.actors.wyrmVisible) this.wyrmNear = this.wyrmFrame * clamp01(sep > 0.5 ? (-dy / sep - 0.1) / 0.6 : 0);
+    } else {
+      this.wyrmLean = this.wyrmPullS = 0;
     }
     // boss intro: lean toward the boss as it bursts out, then settle back on the delver
     let bossPush = 0;
@@ -854,8 +894,23 @@ export class DelveRenderer {
       bossPush = t < 0.35 ? easeInOut(t / 0.35) : t < 1.6 ? 1 : 1 - easeInOut((t - 1.6) / 1.0);
       const near = clamp01((ty - this.bossY) / 10); // a boss on the near (screen-bottom) side needs more lean
       const b = (this.opts.reducedMotion ? 0.25 : 0.38 + 0.17 * near) * clamp01(bossPush);
-      tx += (this.bossX - tx) * b;
-      ty += (this.bossY - ty) * b;
+      let ox = (this.bossX - tx) * b;
+      let oy = (this.bossY - ty) * b;
+      // v0.2 review: a boss bursting out far across the arena dragged the delver to the screen edge under the boss bar
+      // during the first slam. Keep the delver inside ~35% of the half-extent (as the Wyrmfall framing does); the
+      // 0.31 below is 0.35 of the extent after the 12% intro zoom.
+      const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+      const halfW = this.camDist * tanH * this.aspect;
+      // the delver moves opposite to the lean: up-screen when the boss is down-screen (oy < 0), where the extent is longer
+      const halfH = ((this.camDist * tanH) / Math.sin(THREE.MathUtils.degToRad(52))) * (oy < 0 ? 1.05 : 0.8);
+      const ex = Math.abs(ox) / (halfW * 0.31), ey = Math.abs(oy) / (halfH * 0.31); // 0.35 x (1 - the 12% intro zoom)
+      const over = Math.max(ex, ey);
+      if (over > 1) {
+        ox /= over;
+        oy /= over;
+      }
+      tx += ox;
+      ty += oy;
     }
     const k = damp(7, dt);
     this.camX += (tx - this.camX) * k;
@@ -880,6 +935,11 @@ export class DelveRenderer {
     const H = Math.sin(pitch) * dist;
     const D = Math.cos(pitch) * dist;
     this.camera.position.set(this.camX + sx, H + sy, this.camZ + D + sz);
+    // fog follows the zoom, so a pulled-back Wyrmfall camera does not haze the whole arena
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.near = 9 + dist;
+      this.scene.fog.far = 41 + dist * 1.1;
+    }
     this.camera.lookAt(this.camX + sx * 0.5, 0, this.camZ + sz * 0.5 - 0.6);
   }
 

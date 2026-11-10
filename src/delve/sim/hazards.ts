@@ -2,12 +2,13 @@
  * Bursts, telegraph resolution, the Wyrmfall, rocks and stagger (COMBAT), spec 4.2, 7.1, 7.3, 7.4.
  *
  * Bursts: a Poisson process at lambda(t) = BAL.burstRate0 e^(burstRateD L_d) e^(burstRateC c) x Omen
- * (FIX v1: 0.08 e^(0.34 L_d) e^(0.10 c)). Nominal times, shapes,
+ * (BOT v0.2: 0.07 e^(0.30 L_d) e^(0.06 c)). Nominal times, shapes,
  * offsets and rotations come from w.rng.hazard with a FIXED number of draws per burst and depend only
  * on the nominal time, so every player gets the same pattern today (offsets are relative to wherever
- * you stand). Each attempt shifts each burst by +-0.5 s from w.rng.jitter (spec 2.3).
+ * you stand). Each RUN shifts each burst by +-BAL.burstJitter s: w.rng.jitter (per attempt) mixed with a hash of
+ * the run's own state, so two players on the same attempt number do not share a lethal tick (spec 2.3, 7.1).
  * Shapes: circles from 0:00, lanes from 2:00, cones from 3:00, double bursts in the Core ramping in from 8:00.
- * Size: min(0.85, burstPct0 e^(burstPctC c)) x maxHP (FIX v1: 0.22 e^(0.05 c)) (bursts take half DR; a dash gives 0.25 s immunity).
+ * Size: min(0.85, burstPct0 e^(burstPctC c)) x maxHP (BOT v0.2: 0.16 e^(0.06 c)) (bursts take half DR; a dash gives 0.25 s immunity).
  *
  * Telegraphs: wind-up >= 1.2 s in the Descent, 0.8 s in the Core (+ Long Fuse). Shapes:
  *   CIRCLE (x, y, r) | LANE (x, y) -> (x2, y2), half-width r | CONE apex (x, y), direction toward
@@ -29,6 +30,7 @@ import { BAL, DT, TICK_HZ, WORLD, secToTicks } from '../core/constants';
 import { EV } from '../core/events';
 import { cosIdx, fcos, fexp, fexp2, flog, sinIdx } from '../core/fmath';
 import { deriveRng, type Rng } from '../core/rng';
+import { hashInts } from '../core/hash';
 import type { World } from '../core/world';
 import { DEATH, EF, SRC, TG_COLOR, TG_SHAPE, TGF } from '../core/types';
 import { EN } from '../content/enemies';
@@ -123,7 +125,21 @@ function scheduleBurst(w: World, h: HazardState, from: number): void {
   h.burstA = r.angleIdx();
   h.burstRot = r.angleIdx();
   h.burstDouble = r.next();
-  h.burstJitter = Math.round(w.rng.jitter.range(-BAL.burstJitter, BAL.burstJitter) * TICK_HZ);
+  h.burstJitter = burstJitterTicks(w, h);
+}
+
+/**
+ * Per-run burst jitter in ticks, uniform in +-BAL.burstJitter s. The attempt-seeded draw alone is identical for
+ * every player's Nth attempt (a whole cohort would get the same lethal tick), so it is mixed with a hash of this
+ * run's own state (lantern position, tick, burst count): replayable, but different for every run that has moved
+ * differently (spec 7.1 finding: lethal telegraphs must not run on global timestamps).
+ */
+function burstJitterTicks(w: World, h: HazardState): number {
+  const p = w.player;
+  const own = hashInts(w.cfg.daySeed >>> 0, w.cfg.attempt | 0, h.bursts, w.tick, Math.floor(p.x * 64) | 0, Math.floor(p.y * 64) | 0) / 4294967296;
+  let u = w.rng.jitter.next() + own;
+  if (u >= 1) u -= 1;
+  return Math.round((u * 2 - 1) * BAL.burstJitter * TICK_HZ);
 }
 
 /**

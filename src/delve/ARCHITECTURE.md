@@ -384,7 +384,7 @@ npx tsx scripts/delve-run.ts ember 312 3   # headless bot runs, prints time / ca
     head (`SRC.WYRM`, `DMG.DOT`). Rocks: `TRUE_DAMAGE | NO_DASH_IMMUNITY` circles, 0.3/s outside the ring, 0.9/s inside.
     **BUILD:** consider having `nearestEnemy` skip `EF.WYRM` unless `w.hazard.inMaw` (spells otherwise waste on the head).
   - **Bosses (`sim/bosses.ts`):** several can be alive (carry-over); per-boss arrays `slot[5] enrage[5] ...`, `liveCount`;
-    `active/defIdx/spawnedTick` = the newest live boss. Soak = `SOAK_SHARE` (0.45) of off-boss damage mirrored onto the nearest live
+    `active/defIdx/spawnedTick` = the newest live boss. Soak = `BAL.bossSoak` (0.1, ramped in over `BAL.bossSoakRamp` 8 s) of off-boss damage diverted onto the nearest live
     boss within 18 m (`SRC.OTHER`, `DMG.DOT|NO_STAMP|IGNORE_ARMOR`). `startEliteDoor(w)` exported (Elite door). On an elite clear:
     `forge(w)` + `queueOffer(w, OK.RELIC)` with `boss.relicChoices = 4` (**BUILD:** read it for the card count; reset to 3 on boss
     kill). `EV.CHEST a`: 0 chest dropped (b = boss idx), 1 elite fight started (v = seconds), 2 elite cleared, 3 elite escaped.
@@ -543,3 +543,87 @@ npx tsx scripts/delve-run.ts ember 312 3   # headless bot runs, prints time / ca
     dropped on the pick, and a second finger takes over steering when the first lifts.
   - **Not changed:** `vite.config.ts` preview base (a Gem Jam-wide change; lead to decide), sim per-tick allocations
     (needs `--trace-deopt` profiling), per-Omen percentile tables.
+- v0.2 UI (UI owner; no sim change, `SIM_VERSION` untouched).
+  - **Cards:** `ui/cardcopy.ts` (new, tested in `ui/cardcopy.test.ts`) writes each level-up card's numbers line from the
+    sim's own tables: rank-ups say "Rank 2 → 3: +40% damage" (`rankMult` ratio from the owned rank, Core half-ranks
+    included), passives state their total after the pick with caps, Armor states its damage reduction at the current
+    minute (`armorDR` formula, half against red floor). On short phones a rank-up card shows this line instead of the
+    spell description. The "Pick a card." caption is gone (the card header says it).
+  - **Formation caption** names what the renderer draws violet (`0xb070ff`: the 1 s marker and the formation critters),
+    not a "violet floor": "A ring/wall of violet critters ...". Toast border uses the same colour.
+  - **Results:** the day total counts up in lockstep with the "+N" tally and the bar (no "+585 next to 780 / 1,000"
+    mid-count); desktop (>= 900 x 560) uses two columns so the share card sits above the pinned DIVE AGAIN bar; the
+    ticket uses `shareRank` like the share text. Boss/Wyrm off-screen arrow stays below the boss bar.
+  - **Demo runs** (`guard`, `bot`, `speed`, another `?day`): home and results show a "Demo run (...) · not saved" tag,
+    the stamp says "Demo run" (never "First dive today"), points read "demo points, not saved". `ResultsData.demo`,
+    `HomeData.demo`.
+  - **Onboarding:** five panels (keep moving; red floor aims where you stand + dash; gold gems + the "Fuses with" tag;
+    the goal: retries free, best counts, dying early is normal). Two new one-time coaching captions: `still` (no steering
+    for 3 s in the first 90 s) and `redhit` (first red-floor damage: walk out sooner or dash).
+- RENDER v0.2 (render owner: in-run readability). Presentation only; no sim, content or contract changes.
+  - **The delver is never buried:** delver + lantern draw in an on-top depth band (`toyMaterial({ onTop })`, depth squeezed
+    in front of the scene around `materials.uAnchor`, own depth order kept) and are self-lit; a cream outline hull
+    (`hullMaterial`, red while hurt) sits just behind them. The ground ring is thicker, breathes, has a dark halo, and sits
+    in a band over critters but under the delver (`onTopBasic`). Critters within ~2.8 m (3.4 m in the Core) of the delver
+    darken/desaturate and their hit-flash whitening is muted (`toyMaterial({ nearDim })`, `materials.uNear`). Lantern
+    floor pool wider/brighter in the Core.
+  - **Telegraphs:** solid red wash (alpha ~0.44) + thick bright rim from frame 0, brighter fill behind a white-hot front
+    growing middle -> rim at impact, last 20% throbs; the over-the-crowd copy now also washes the area and shows the
+    front. The sim frees a warning ~0.1 s after impact, so the impact flash is drawn by the renderer
+    (`ActorFrame.onImpact`: white filled flash + shock ring + glow; lanes flash as beams).
+  - **Walls:** shader cutaway (`toyMaterial({ cutaway })`, `materials.uFocus`) sinks walls/stalagmites/props to ~22%
+    height everywhere except clearly up-screen of the delver (on top of the static `camFlat`).
+  - **Colour:** critters use a greyer rim (`uRimCritter`); Core grade edges are cool-neutral (the old magenta cut turned
+    cream shrooms pink and violet clumps red-pink) and the heartbeat pump darkens violet, not red; formation tint 0.45
+    -> 0.3 (+ glow).
+  - **Wyrmfall camera:** frames the head's floor point and the delver: pull-back up to +95%, lean so the head sits
+    within ~52% of the half-extent and the delver within ~46%; fog distance follows the zoom. Skull lighter + stronger rim.
+  - **Damage numbers:** hits on the same critter within 0.45 s fold into one climbing number (`DamageNumbers.hit`), size
+    relative to a running typical hit (chip damage small + dim, totals capped in size), 32 numbers max, ~12 new/s, and
+    numbers fade out within ~2 m of the delver so they never cover it.
+  - **Debug:** `?debug` adds `__delveWarp(sec, spec?, day?)`: a private guarded bot world fast-forwarded to `sec`, drawn at
+    1 tick per frame (look checks of the Core / Wyrmfall without a 12-minute run).
+- BOT v0.2 (bot owner: sim numbers, content numbers, bots, population). `SIM_VERSION` 2 -> 3 (constants hash `f5d34738`).
+  - **Balance (`BAL`, numbers):** bursts 0.08/0.34/0.10 rate, 0.22/0.05 size -> 0.07/0.30/0.06, 0.16/0.06; hp0 13 -> 14,
+    hpD 0.45 -> 0.58, hpC 0.48 -> 0.21, coreStep x1.7 over 310-410 s -> x2.1 over 300-540 s; dmg0 2.2 -> 1.0, dmgD 0.46 ->
+    0.66; n0 1.6 -> 1.3, nD 0.2 -> 0.26; bossHP [500,1500,3200,6000,9200] -> [550,1900,2400,7000,10000]; enrage 20/40 s ->
+    25/60 s; new keys `bossSoak` 0.1 (was the 0.5 `SOAK_SHARE` const; it now reads BAL) and `bossSoakRamp` 8 s.
+    `bossBurst` 0.13 -> 0.10 now actually scales every boss pattern (`bosses.ts bossPct`; the key was unused).
+    Layer 5 mix: golem 3 -> 2, +1 slime (`content/layers.ts`).
+  - **Burst jitter (`hazards.ts`):** the +-0.5 s jitter was seeded by the attempt number only, so every player's Nth attempt
+    shared each burst tick. It now mixes the attempt draw with a hash of the run's own state (lantern position, tick, burst
+    count): replayable, different per run. Test: `sim/balance-v02.test.ts`.
+  - **Heal cap:** the max-HP leak was already closed (`refreshMaxHp` queues the gain inside the cap); a regression test now
+    takes 5 Vitality ranks at 50% HP and checks HP does not move at the pick and pays out <= 1.5%/s (fails if reverted).
+  - **Swarming (`content/omens.ts`):** hpU x0.6 -> x0.63, and two tag rules: fire splashes x1.3 radius
+    (`spells.ts SWARM_FIRE_SPLASH`), rot / Wildfire jump radius 2.5 -> 1.9 m (`statuses.ts SWARM_SPREAD_R`). Omen desc
+    gained "Fire splashes burst wider; rot jumps shorter." **UI:** shows the desc as before.
+  - **Bots / population:** casual tier e 0.15-0.45 -> 0.0-0.35 (random 50%), average 0.40-0.65 -> 0.30-0.55; skill model
+    `kiteR` 0.6 + 2.0e, `crowdAware` 0.15 + 0.85e. `delve-pop.ts` prints per-Omen percentiles, fusions and 12:00 reach per
+    tier, and `--write-table` also writes **`BOT_POPULATION_BY_OMEN` + `populationForOmen(id)`** in `bot/population.ts`.
+    **UI:** pass `populationForOmen(seed.omenId)` as `pop` to `topLabel/topPercent/shareRank` and the results curve.
+  - **Population** (`--players 160 --days 312,315,319,322,326,333,340,349 --omen-bots 16 --write-table`, 1,280 daily bests):
+    p10 4:11 / p50 6:41 / p90 9:04 / p99 11:00, max 12:12, CV 0.29; largest 10 s bucket 4.38% (was 5.94%); deaths overrun
+    73% / red 23% / boss 4% (was 49/50/1); boss kills 20-31 s after spawn (was 9-18 s); 1 elite run reached the Wyrmfall
+    (was none); Swarming Ember +3.2% / Venom +15.0% (16 bots/day; a 60-bot run read +5.2% / +12.0%); Ironhide +1.4% / +2.9%.
+- FIX v0.2 (fixer pass on the v0.2 fresh-eyes + tech review; touches several owners' files). `SIM_VERSION` 3 -> 4
+  (constants hash `ba13b757`).
+  - **Balance:** `BAL.enrageStart/enrageLen` 25/60 s -> 35/80 s; a new layer's enemy mix fades in over its first 20 s
+    (`sim/spawn.ts MIX_BLEND_S`, decided from the low digits of the existing kind roll, no extra rng draw); Swarming hpU
+    x0.63 -> x0.66. Quick population (days 312/319/326): largest 10 s bucket 6.94% at 4:10 -> 5.0% at 5:00 (4:10 now 4.4%),
+    p10 4:05 / p50 6:37 / p90 9:17 / p99 11:46, CV 0.315, overrun 73%; days 333/340/347: 5.6% at 8:10 (gate 2 still
+    open). Omen experiment (60 bots/day x 3 days): Swarming +7.1% (Ember +7.2 / Venom +7.0), Ironhide +0.1%.
+  - **Bosses:** the dead `SOAK_SHARE` const (captured `BAL.bossSoak` once at load, so `--set bossSoak=` sweeps never
+    reached it) is gone; the soak reads `BAL.bossSoak`.
+  - **Render:** player zones are a faint haze with a DASHED rim (hazards keep a solid wash + solid rim); splash rings
+    thinner/shorter, ring disc fill halved, telegraph post-impact afterglow 0.6 -> 0.35 s, impact ring 0.45 -> 0.3 s;
+    boss-intro camera lean clamped so the delver stays within ~35% of the half-extent; damage numbers stop folding at
+    5 digits (no more pinned "99999" on the Wyrm).
+  - **UI:** fusion hints in plain words with picks-to-go ("Rank this to 5 and Firebolt to 4 to fuse them into Fever
+    Bloom (3 more picks)", "1 pick from ...!", "Unlocks ...!") and a gold highlight one pick out (`cardFusionHint` now
+    returns `{ text, picks }`); results lead with progress ("Reached Layer 3 · Next: Layer 4 at 3:00") for runs in the
+    bottom tenth, the bot rank in small print; death tips name the counter to the boss that was up (`BOSS_TIPS`) or flag a
+    spread build; new-best delta floors both times; boss arrow avoids the dash button and spell slots; toasts wrap;
+    layer / Core banners sit above the delver and fade when red floor is within 1.5 m; joystick knob is a see-through
+    ring and captions lift above it while touching; desktop HUD scales up from 1000x640; demo pill over the left results
+    column; "earned this try"; onboarding says "pick a card".

@@ -16,6 +16,7 @@ import { FUSIONS } from '../content/fusions';
 import { escapeHtml } from '../app/format';
 import { glyph, kwChip, KW_COLOR } from './glyphs';
 import { cardFusionHint } from './fusionhint';
+import { cardNumbers } from './cardcopy';
 
 const ARM_MS = 350;
 const COLUMN: Record<string, string> = { area: 'Crowds', single: 'Big targets', survival: 'Survival' };
@@ -230,12 +231,16 @@ export class CardPicker {
       el.style.setProperty('--i', String(i));
       const kws = c.keywords.length ? `<div class="dv-card-kws">${c.keywords.map((k) => kwChip(k)).join('')}</div>` : '';
       const spellName = c.kind === 'fusion' ? `<div class="dv-card-parents">${escapeHtml(fusionParents(c))}</div>` : '';
-      const detail = c.detail && c.kind !== 'talent' ? `<div class="dv-card-detail">${escapeHtml(c.detail)}</div>` : '';
+      // exact numbers from the sim's own tables (v0.2); falls back to the offer's detail line
+      const nums = isLevel ? cardNumbers(w, c) : '';
+      const detailTxt = nums || (c.kind !== 'talent' ? c.detail ?? '' : '');
+      const detail = detailTxt ? `<div class="dv-card-detail">${escapeHtml(detailTxt)}</div>` : '';
       const col = c.kind === 'talent' && c.detail ? `<div class="dv-card-col">${escapeHtml(COLUMN[c.detail] ?? c.detail)}</div>` : '';
       const fit = c.fit !== undefined && (c.kind === 'spell' || c.kind === 'rank') && c.fit >= 1.15 ? '<span class="dv-card-fit">Strong today</span>' : '';
       const meta = kws || pips(c) ? `<div class="dv-card-meta">${kws}${pips(c)}</div>` : '';
-      const fh = isLevel ? cardFusionHint(w, c) : '';
-      const fuseChip = fh ? `<div class="dv-card-fhint">${glyph('relic')}<span>${escapeHtml(fh)}</span></div>` : '';
+      const fh = isLevel ? cardFusionHint(w, c) : null;
+      const fuseChip = fh ? `<div class="dv-card-fhint${fh.picks <= 1 ? ' near' : ''}">${glyph('relic')}<span>${escapeHtml(fh.text)}</span></div>` : '';
+      if (fh && fh.picks <= 1) el.classList.add('fuse-near');
       el.innerHTML = `
         <span class="dv-card-label l-${labCls}">${lab}</span>${fit}
         <span class="dv-card-art">${cardIcon(c)}</span>

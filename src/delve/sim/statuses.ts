@@ -102,6 +102,9 @@ export function updateStatuses(w: World): void {
   }
 }
 
+/** Rot / Wildfire jump radius under the Swarming Omen (see onEnemyDeath). */
+export const SWARM_SPREAD_R = 1.9;
+
 /** Called by killEnemy before the slot is released: spread poison / shadow / (Wildfire) burn to neighbours. */
 export function onEnemyDeath(w: World, e: number): void {
   const en = w.en;
@@ -113,7 +116,10 @@ export function onEnemyDeath(w: World, e: number): void {
     const k = e * NS + kind;
     if (en.stStacks[k] <= 0 || en.stTicks[k] <= 0) continue;
     let n = 0;
-    let r = 2.5;
+    // Swarming packs 1.6x the bodies into the same floor: the rot's jump radius shrinks (2.5 m -> 1.9 m, area x0.58)
+    // to keep about the same expected neighbour count, so the Omen favours AREA bursts (Ember) without handing spread
+    // specs a chain that never ends (bot Omen experiment: Venom +24% / Ember +11% with the full radius).
+    let r = w.mods.tags.has('swarming') ? SWARM_SPREAD_R : 2.5;
     if (kind === ST.POISON && mask & (1 << ST.POISON)) n = ru.plague ? 2 : 1;
     else if (kind === ST.SHADOW && mask & (1 << ST.SHADOW)) {
       n = 2;

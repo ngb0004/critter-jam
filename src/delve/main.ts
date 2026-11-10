@@ -19,12 +19,13 @@ import { dayNumber, msUntilReset, seedForDay } from './core/daily';
 import { EV } from './core/events';
 import { Recorder, serializeReplay } from './core/replay';
 import { choose, createWorld, step, type World } from './core/world';
-import { DEATH, TG_COLOR, type ChoiceCode, type SpecId } from './core/types';
+import { DEATH, IN_MOVE, TG_COLOR, type ChoiceCode, type SpecId } from './core/types';
 import { buildModifiers } from './content/omens';
 import { BOSSES } from './content/bosses';
 import { layerDef } from './content/layers';
 import { relicById } from './content/relics';
 import { SPEC_IDS } from './content/specs';
+import { SPELLS } from './content/spells';
 import { DelveRenderer } from './render/renderer';
 import { botChoose, botInput } from './bot/bot';
 import { Hud, type Projector } from './ui/hud';
@@ -95,6 +96,14 @@ const GUARD = params.get('guard') === '1';
 const scratch = freshSave();
 const sandboxed = (day: number): boolean => GUARD || BOT !== null || SPEED !== 1 || (params.has('day') && day !== dayNumber(Date.now()));
 const runSave = (day: number) => (sandboxed(day) ? scratch : save);
+/** Plain label for a sandboxed run, shown on home and results so demos never read as a real first dive. */
+function demoLabel(day: number): string {
+  if (!sandboxed(day)) return '';
+  if (GUARD) return 'Demo run (guarded)';
+  if (BOT !== null) return 'Bot demo run';
+  if (SPEED !== 1) return `Demo run (${SPEED}x speed)`;
+  return `Practice: Delve #${day}`;
+}
 
 const stage = document.getElementById('dv-stage')!;
 const canvas = document.getElementById('dv-canvas') as HTMLCanvasElement;
@@ -127,6 +136,8 @@ let acc = 0;
 let last = performance.now();
 let holdForFusion = false;
 let botPickAt = 0;
+/** Coaching for first-time players: consecutive sim ticks the human has not steered (reset on any move input). */
+let stillTicks = 0;
 
 function applySettings(s: Settings): void {
   audio.volume = s.volume;
@@ -151,9 +162,8 @@ const cards = new CardPicker(ui, (code: ChoiceCode) => {
   input.clearDash();
 });
 cards.onClick = () => audio.click();
-cards.onShown = (kind) => {
-  if (kind === 0) caption('card', 'Pick a card.', 2600);
-};
+// (v0.2: no "Pick a card." caption: the card header already says it, and on phones the caption covered the hint line)
+cards.onShown = null;
 
 hud.onPause = () => pause();
 hud.onDash = () => input.queueDash();
@@ -209,6 +219,7 @@ function showHome(): void {
     firstTime: save.history.length === 0,
     settings: save.settings,
     saveNote: !FRESH && !saveHealth.ok ? "Progress can't be saved in this browser mode." : '',
+    demo: demoLabel(day),
   }, {
     onReset: () => {
       if (state === 'home') showHome();
@@ -273,6 +284,7 @@ function startRun(spec: SpecId): void {
   acc = 0;
   holdForFusion = false;
   botPickAt = 0;
+  stillTicks = 0;
   state = 'run';
   input.reset();
   input.enabled = true;
@@ -313,6 +325,20 @@ function resume(): void {
   last = performance.now();
 }
 
+/** Inputs for the results tip: the live boss (if any) and how spread the build was (read-only). */
+function buildShape(w: World): { liveBoss: number; spells: number; maxRank: number; fusions: number } {
+  let spells = 0;
+  let maxRank = 0;
+  for (let s = 0; s < w.build.slotSpell.length; s++) {
+    const si = w.build.slotSpell[s];
+    if (si < 0 || SPELLS[si]?.fusion) continue;
+    spells++;
+    maxRank = Math.max(maxRank, w.build.slotRank[s]);
+  }
+  const live = w.boss.active >= 0 && w.en.alive[w.boss.active] ? w.boss.defIdx : -1;
+  return { liveBoss: live, spells, maxRank, fusions: w.score.fusions };
+}
+
 /** Settle the run (death or quit) and schedule the results screen. */
 function endRun(quit: boolean): void {
   const w = world;
@@ -340,6 +366,7 @@ function endRun(quit: boolean): void {
     wyrmSec: sec - 720,
     staggerSec: w.score.staggerSeconds,
     dmgByCause: w.player.dmgByCause,
+    ...buildShape(w),
   });
   const share = shareText({ day: w.cfg.day, seconds: ds.bestSec, specId: (ds.bestSpec || w.specId) as SpecId, keywords: ds.bestKeywords, url: location.origin + location.pathname });
   const build: [number, number][] = [];
@@ -351,6 +378,7 @@ function endRun(quit: boolean): void {
     level: w.xp.level, kills: w.score.kills, bosses: w.score.bossesKilled, fusions: w.score.fusions, tries: ds.tries,
     specId: w.specId, build, relics: w.build.relics.map((id) => relicById(id)?.name ?? id), share, canShare: canNativeShare(),
     cause: quit ? 'quit' : 'death', bestSpec: ds.bestSpec || w.specId, bestKeywords: ds.bestKeywords, reduced: save.settings.reducedMotion,
+    demo: demoLabel(w.cfg.day),
   };
   const delay = quit ? 150 : 1500;
   window.setTimeout(() => {
@@ -396,7 +424,12 @@ function drain(w: World): void {
       });
     } else if (k === EV.TELEGRAPH && ev.c[i] === TG_COLOR.RED) caption('red', 'Red floor = move!', 2600);
     else if (k === EV.CHEST && ev.a[i] === 0) caption('gold', 'Gold = grab!', 2400);
-    else if (k === EV.BURST_HIT && ev.v[i] > 0) log.burstHits++;
+    else if (k === EV.BURST_HIT && ev.v[i] > 0) {
+      log.burstHits++;
+      // first time red floor lands on a new player: say what to do next time (QA: non-gamers die standing in red)
+      const touch = matchMedia('(pointer: coarse)').matches;
+      caption('redhit', touch ? 'Ouch! Walk out of red before it fills, or tap to dash through it.' : 'Ouch! Walk out of red before it fills, or press Space to dash through it.', 3400);
+    }
   }
   renderer.onEvents(ev);
   audio.onEvents(ev, w);
@@ -448,6 +481,7 @@ function frameInner(now: number): void {
         const f = BOT === '1' || BOT === 'move' ? botInput(w) : BOT === 'idle' ? 0 : input.sample();
         if (step(w, f)) {
           rec?.frame(f);
+          stillTicks = f & IN_MOVE ? 0 : stillTicks + 1;
           if (w.tick % 60 === 0) log.sample(w.tick * DT, w.player.hp / Math.max(1, w.player.maxHp), w.en.count, w.score.kills);
         }
         acc -= DT;
@@ -471,8 +505,15 @@ function frameInner(now: number): void {
     if (state === 'run' || state === 'paused' || state === 'dead') {
       hud.update(w, project, stage.clientWidth, stage.clientHeight);
       if (state === 'run') cards.update(w);
+      // a caption raised just before the cards opened must not sit on top of a card
+      hud.root.classList.toggle('cards-open', cards.visible);
     }
     if (state === 'run' && w.over) endRun(false);
+    // a first-time player standing still for 3 s while critters close in: red floor aims where you stand
+    if (state === 'run' && !BOT && stillTicks >= 180 && w.tick < 90 * 60 && w.en.count > 3 && !w.offer.open && save.seenCaptions.includes('move')) {
+      const touch = matchMedia('(pointer: coarse)').matches;
+      caption('still', touch ? 'Keep moving! Drag anywhere. Red floor aims where you stand.' : 'Keep moving! WASD or arrows. Red floor aims where you stand.', 3600);
+    }
     // first time a pile of gems lies uncollected: tell the player to walk into them
     if (state === 'run' && w.gm.count >= 15 && !w.offer.open && !save.seenCaptions.includes('gems')) caption('gems', 'Gold = grab! Walk over gems to level up.', 3200);
     renderer.render(w, state === 'paused' ? 0 : realDt);
@@ -549,6 +590,7 @@ dbg.__delveDebug = {
       newBest: sec > prevBestSec, bestSec: best, prevBestSec, firstOfDay: prevBestSec <= 0, gained: sec > prevBestSec ? 220 : 0, dayPoints: 820,
       top: topLabel(sec), topPct: topPercent(sec), level: 41, kills: 7210, bosses: 5, fusions: 1, tries: 3, specId: 'ember',
       build: [[0, 5], [3, 5], [5, 4]], relics: ['Lantern Oil'], share, canShare: false, cause: 'death', bestSpec: 'ember', bestKeywords: kws, reduced: save.settings.reducedMotion,
+      demo: 'Preview',
     }, { onAgain: () => showHome(), onHome: () => showHome(), onCopy: () => copyText(share), onShare: () => nativeShare(share), onStamp: () => audio.stamp(), onTally: (p) => audio.tally(p), onFanfare: () => audio.fanfare() });
   },
 };

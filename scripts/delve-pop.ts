@@ -5,15 +5,17 @@
  *                                [--write-table] [--json out.json] [--quick]
  *
  * Population (per day, daily best per player, spec 7.5 tiers):
- *   casual 50%  e 0.15-0.45  random/decent picks   1-2 attempts
- *   average 30% e 0.40-0.65  decent/greedy          1-3
- *   good 15%    e 0.62-0.82  decent/greedy          2-5
+ *   casual 50%  e 0.00-0.35  random/decent picks   1-2 attempts
+ *   average 30% e 0.30-0.55  decent/greedy          1-3
+ *   good 15%    e 0.55-0.80  decent/greedy          2-5
  *   great 4%    e 0.80-0.93  decent/greedy          6-12
- *   elite 1%    e 0.92-1.00  greedy/decent          10-20
+ *   elite 1%    e 0.93-1.00  greedy/decent          10-20
+ * (BOT v0.2 moved casual/average down: the QA naive personas, which play like first-day humans, died at 2-3 min
+ * while the old casual tier lived to ~7 min; spec 7.5's casual median is 4:14.)
  * Prints: daily-best percentiles overall / per tier / per spec, death causes, the largest 10 s bucket,
  * runs past 14:00, an Omen experiment (same bots, Omen forced off / Swarming / Ironhide), fusion counts,
- * picks per minute, onboarding (first card, layer 3 reach). --write-table regenerates
- * src/delve/bot/population.ts (the "Top N% est." table).
+ * picks per minute, onboarding (first card, layer 3 reach), fusions and 12:00 reach per tier. --write-table
+ * regenerates src/delve/bot/population.ts (the pooled "Top N% est." table plus one table per weekly Omen).
  */
 import { fork } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -74,11 +76,11 @@ function arg(name: string, def: string): string {
 }
 
 const TIERS = [
-  { name: 'casual', share: 0.5, lo: 0.15, hi: 0.45, pol: [['random', 0.4], ['decent', 0.6]], att: [1, 2] },
-  { name: 'average', share: 0.3, lo: 0.4, hi: 0.65, pol: [['decent', 0.7], ['greedy', 0.3]], att: [1, 3] },
-  { name: 'good', share: 0.15, lo: 0.62, hi: 0.82, pol: [['decent', 0.5], ['greedy', 0.5]], att: [2, 5] },
+  { name: 'casual', share: 0.5, lo: 0.0, hi: 0.35, pol: [['random', 0.5], ['decent', 0.5]], att: [1, 2] },
+  { name: 'average', share: 0.3, lo: 0.3, hi: 0.55, pol: [['decent', 0.8], ['greedy', 0.2]], att: [1, 3] },
+  { name: 'good', share: 0.15, lo: 0.55, hi: 0.8, pol: [['decent', 0.5], ['greedy', 0.5]], att: [2, 5] },
   { name: 'great', share: 0.04, lo: 0.8, hi: 0.93, pol: [['decent', 0.6], ['greedy', 0.4]], att: [6, 12] },
-  { name: 'elite', share: 0.01, lo: 0.92, hi: 1.0, pol: [['greedy', 0.5], ['decent', 0.5]], att: [10, 20] },
+  { name: 'elite', share: 0.01, lo: 0.93, hi: 1.0, pol: [['greedy', 0.5], ['decent', 0.5]], att: [10, 20] },
 ] as const;
 
 function buildJobs(players: number, days: number[], omenBots: number): Job[] {
@@ -232,6 +234,7 @@ async function main(): Promise<void> {
   for (const t of TIERS) console.log(pctLine(t.name, bests.filter((r) => r.job.tier === t.name).map((r) => r.sec)));
   for (const sp of ['ember', 'venom']) console.log(pctLine(sp, bests.filter((r) => r.job.spec === sp).map((r) => r.sec)));
   for (const d of days) console.log(pctLine(`day ${d}`, bests.filter((r) => r.job.day === d).map((r) => r.sec)));
+  for (const o of omensOf(days)) console.log(pctLine(`omen ${o}`, bests.filter((r) => seedForDay(r.job.day).omenId === o).map((r) => r.sec)));
   for (const pol of ['random', 'decent', 'greedy']) console.log(pctLine(`policy ${pol}`, bests.filter((r) => r.job.policy === pol).map((r) => r.sec)));
   const s = secs.slice().sort((a, b) => a - b);
   const p50 = q(s, 50);
@@ -319,6 +322,11 @@ async function main(): Promise<void> {
   }
   console.log(`  runs with 0/1/2/3 fusions: ${nf.map((n) => ((100 * n) / pop.length).toFixed(0) + '%').join(' / ')}`);
   console.log(`  by fusion: ${[...fc.entries()].map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  for (const t of TIERS) {
+    const sel = pop.filter((r) => r.job.tier === t.name);
+    const fb = bests.filter((r) => r.job.tier === t.name);
+    console.log(`  ${t.name.padEnd(8)} runs with a fusion ${((100 * sel.filter((r) => r.fusions > 0).length) / Math.max(1, sel.length)).toFixed(0)}%, daily bests with a fusion ${((100 * fb.filter((r) => r.fusions > 0).length) / Math.max(1, fb.length)).toFixed(0)}%, reached 12:00 ${sel.filter((r) => r.sec >= 720).length}/${sel.length} runs`);
+  }
   for (const sp of ['ember', 'venom']) {
     const sel = pop.filter((r) => r.job.spec === sp && r.fusionAt.length);
     console.log(`  ${sp}: first fusion median ${sel.length ? fmt(median(sel.map((r) => r.fusionAt[0]))) : '-'} (${sel.length} runs)`);
@@ -343,7 +351,11 @@ async function main(): Promise<void> {
     }
   }
 
-  if (process.argv.includes('--write-table')) writeTable(secs, days, players, pop.length);
+  if (process.argv.includes('--write-table')) {
+    const byOmen: Record<string, number[]> = {};
+    for (const o of omensOf(days)) byOmen[o] = bests.filter((r) => seedForDay(r.job.day).omenId === o).map((r) => r.sec);
+    writeTable(secs, days, players, pop.length, byOmen);
+  }
   const json = arg('json', '');
   if (json) writeFileSync(json, JSON.stringify(res));
 }
@@ -356,7 +368,17 @@ function sd(a: number[]): number {
   return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / Math.max(1, a.length - 1));
 }
 
-function writeTable(secs: number[], days: number[], players: number, runs: number): void {
+/** The Omens the given days run under (weekly Omen of each day), in first-seen order. */
+function omensOf(days: number[]): string[] {
+  const out: string[] = [];
+  for (const d of days) {
+    const o = seedForDay(d).omenId;
+    if (o && !out.includes(o)) out.push(o);
+  }
+  return out;
+}
+
+function quantileTable(secs: number[]): [number, number][] {
   const s = secs.slice().sort((a, b) => a - b);
   const ps = [0, 1, 5, 10, 25, 50, 75, 90, 95, 99, 99.9];
   const quantiles: [number, number][] = [];
@@ -366,12 +388,30 @@ function writeTable(secs: number[], days: number[], players: number, runs: numbe
     quantiles.push([p, v]);
   }
   quantiles.push([100, Math.max(872, quantiles[quantiles.length - 1][1] + 1)]);
+  return quantiles;
+}
+
+function writeTable(secs: number[], days: number[], players: number, runs: number, byOmen: Record<string, number[]>): void {
+  const quantiles = quantileTable(secs);
+  const omenRows = Object.entries(byOmen)
+    .filter(([, v]) => v.length >= 100)
+    .map(([o, v]) => {
+      const od = days.filter((d) => seedForDay(d).omenId === o);
+      return `  ${o}: {
+    source: 'bot-population estimate, ${o} days ${od.join(', ')}: ${v.length} real-sim daily bests (scripts/delve-pop.ts)',
+    quantiles: ${JSON.stringify(quantileTable(v))},
+  },`;
+    });
   const src = `/**
  * BOT-POPULATION ESTIMATE, not real players. Generated by scripts/delve-pop.ts --write-table on the real sim:
  * ${players} bot players x days ${days.join(', ')} (${secs.length} daily bests from ${runs} runs), tiered skill
  * (casual 50% / average 30% / good 15% / great 4% / elite 1%), kiting bots with human-like reaction and noise,
  * random / decent / greedy pick policies, 1-20 attempts per tier. Survival time in seconds.
  * The UI must always label this as an estimate ("Top 18% est."). Regenerate after balance changes.
+ *
+ * BOT_POPULATION is every day pooled (what app/percentile.ts shows). BOT_POPULATION_BY_OMEN holds one table per
+ * weekly Omen (only the days that ran under it); populationForOmen(id) returns it, or the pooled table for an Omen
+ * without one. UI: pass populationForOmen(seed.omenId) as the \`pop\` argument of topLabel / topPercent / shareRank.
  */
 import type { Population } from '../app/percentile';
 
@@ -379,9 +419,20 @@ export const BOT_POPULATION: Population = {
   source: 'bot-population estimate: ${secs.length} real-sim daily bests (scripts/delve-pop.ts)',
   quantiles: ${JSON.stringify(quantiles)},
 };
+
+/** Per-Omen tables (daily bests on the days that ran under that weekly Omen). */
+export const BOT_POPULATION_BY_OMEN: Readonly<Record<string, Population>> = {
+${omenRows.join('\n')}
+};
+
+/** The table for a day's Omen (falls back to the pooled table). */
+export function populationForOmen(omenId: string): Population {
+  return Object.prototype.hasOwnProperty.call(BOT_POPULATION_BY_OMEN, omenId) ? BOT_POPULATION_BY_OMEN[omenId] : BOT_POPULATION;
+}
 `;
   writeFileSync(resolve(import.meta.dirname, '../src/delve/bot/population.ts'), src);
   console.log(`\nwrote src/delve/bot/population.ts: ${JSON.stringify(quantiles)}`);
+  for (const [o, v] of Object.entries(byOmen)) console.log(`  ${o} (${v.length}): ${v.length >= 100 ? JSON.stringify(quantileTable(v)) : 'too few daily bests, not written'}`);
 }
 
 // ------------------------------------------------------------------ entry

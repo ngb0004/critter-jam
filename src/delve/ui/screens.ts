@@ -11,7 +11,7 @@ import type { SpecId } from '../core/types';
 import type { Settings } from '../app/save';
 import { escapeHtml, fmtCountdown, fmtInt, fmtTime } from '../app/format';
 import { glyph, kwChip, KW_COLOR, KW_LABEL, specArt } from './glyphs';
-import { estimatePercentile, POPULATION, topLabel } from '../app/percentile';
+import { estimatePercentile, milestoneLabel, POPULATION, shareRank } from '../app/percentile';
 import { nextMilestone } from '../app/points';
 import { heroArt, omenArt, twistArt } from './art';
 
@@ -74,7 +74,7 @@ export function howToCard(open = false, tour = false): string {
     <summary>${glyph('lantern')}How to play<span class="dv-chev"></span></summary>
     <ul>
       <li><span class="dv-hi move"></span><div><b>Drag to move.</b> One thumb, anywhere on the screen. Keys: WASD or arrows.</div></li>
-      <li><span class="dv-hi auto">${glyph('fire')}</span><div><b>You attack on your own.</b> Your spells aim and fire by themselves.</div></li>
+      <li><span class="dv-hi auto">${glyph('fire')}</span><div><b>You attack on your own.</b> Your spells aim and fire by themselves. You just keep moving.</div></li>
       <li><span class="dv-hi red"></span><div><b>Red floor = move!</b> It fills up, then hits. Walk out before it's full.</div></li>
       <li><span class="dv-hi gold">${glyph('relic')}</span><div><b>Gold = grab.</b> Gems give XP, chests give relics.</div></li>
       <li><span class="dv-hi card">${glyph('reroll')}</span><div><b>Pick a card</b> each level. Two keywords at high rank <b>fuse</b>.</div></li>
@@ -106,6 +106,8 @@ export interface HomeData {
   settings: Settings;
   /** One-line storage warning ('' = storage works). */
   saveNote?: string;
+  /** Debug / demo session label ('' = a real dive that counts). */
+  demo?: string;
 }
 
 export interface HomeCallbacks {
@@ -147,6 +149,7 @@ export function homeScreen(parent: HTMLElement, d: HomeData, cb: HomeCallbacks):
         <header class="dv-brand">
           <div class="dv-hero">${heroArt()}</div>
           <h1 class="dv-logo">Delve <span>Daily</span></h1>
+          ${d.demo ? `<div class="dv-home-demo" role="note">${h(d.demo)} · not saved</div>` : ''}
           <div class="dv-dayline"><span class="dv-daynum">Delve #${d.seed.day}</span><span class="dv-sep">·</span><span class="dv-reset">new dive in <b>${fmtCountdown(d.msToReset)}</b></span></div>
         </header>
         <section class="dv-today" aria-label="Today's rules">
@@ -281,6 +284,11 @@ export interface ResultsData {
   bestKeywords: string[];
   /** Skip the count-up show. */
   reduced?: boolean;
+  /**
+   * Debug / demo run (guard, bot, speed, another day): settled into a session scratch save, never the real one.
+   * The text names why (e.g. "Demo run (guarded)"); the screen then never says "First dive today" or claims points.
+   */
+  demo?: string;
 }
 
 export interface ResultsCallbacks {
@@ -332,6 +340,19 @@ function rankCurve(sec: number): string {
   </svg>`;
 }
 
+/**
+ * The rank tile. v0.2 review: every first-time run (1:53-2:57) led with a huge "Beat <1% of bot runs" while p10 sits near
+ * 4:00, which undercut the reason to dive again. Runs in the bottom tenth lead with progress instead (how deep the best run
+ * got and the next depth to aim for); the bot rank drops to small print. The curve stays.
+ */
+function rankBlock(r: ResultsData): string {
+  const low = r.topPct >= 90;
+  if (!low) return `<div class="dv-stat dv-rank"><span class="dv-stat-k">Rank today</span><b class="dv-rank-v">${h(r.top)}</b>`;
+  const layer = Math.min(5, Math.floor(r.bestSec / 60) + 1);
+  const next = r.bestSec < 300 ? (layer < 5 ? `Next: Layer ${layer + 1} at ${fmtTime(layer * 60)}` : 'Next: the Core at 5:00') : 'Next: hold the Core';
+  return `<div class="dv-stat dv-rank low"><span class="dv-stat-k">Best today</span><b class="dv-rank-v">${h(milestoneLabel(r.bestSec))}</b><small class="dv-rank-next">${h(next)}</small>`;
+}
+
 /** Visual share card: what the copied text stands for, drawn as a little ticket. */
 function shareCardArt(r: ResultsData): string {
   const sd = SPECS[r.bestSpec as SpecId] ?? SPECS[r.specId];
@@ -341,7 +362,7 @@ function shareCardArt(r: ResultsData): string {
     <div class="dv-ticket-l">
       <span class="dv-ticket-k">${glyph('lantern')}DELVE #${r.day}</span>
       <b class="dv-ticket-time">${fmtTime(r.bestSec)}</b>
-      <span class="dv-ticket-top">${h(topLabel(r.bestSec))}</span>
+      <span class="dv-ticket-top">${h(shareRank(r.bestSec))}</span>
     </div>
     <div class="dv-ticket-r">
       <span class="dv-ticket-spec">${h(sd.name)}</span>
@@ -403,37 +424,48 @@ export function resultsScreen(parent: HTMLElement, r: ResultsData, cb: ResultsCa
     return `<span class="dv-bspell ${sp.fusion ? 'fused' : ''}" style="--kw:${KW_COLOR[sp.keywords[0]]};--kw2:${KW_COLOR[sp.keywords[1] ?? sp.keywords[0]]}">${glyph(sp.keywords[0])}${sp.keywords[1] ? glyph(sp.keywords[1]) : ''}<b>${h(sp.name)}</b><small>${sp.fusion ? 'fused' : `R${rank % 1 ? rank.toFixed(1) : rank}`}</small></span>`;
   }).join('');
   const before = Math.max(0, r.dayPoints - r.gained);
-  const ptsSub = r.gained > 0
-    ? `${r.firstOfDay ? 'earned today' : 'topped up'} · <b>${fmtInt(r.dayPoints)}</b> / 1,000 today`
-    : `best (${fmtTime(r.bestSec)}) already paid · ${fmtInt(r.dayPoints)} / 1,000`;
+  // the day total counts up in lockstep with the "+N" tally, so the two never disagree mid-count (v0.1 QA: "+585" next
+  // to "780 / 1,000" was the tally caught halfway while the total already showed its final value)
+  const ptsSub = r.demo
+    ? `demo points, not saved · <b class="dv-pts-tot">${fmtInt(r.gained > 0 ? before : r.dayPoints)}</b> / 1,000`
+    : r.gained > 0
+      ? `${r.firstOfDay ? 'earned' : 'topped up'} this try · <b class="dv-pts-tot">${fmtInt(before)}</b> / 1,000 today`
+      : `best (${fmtTime(r.bestSec)}) already paid · ${fmtInt(r.dayPoints)} / 1,000`;
   const nxt = nextMilestone(r.bestSec);
   const nextLine = nxt ? `Next: <b>${fmtInt(nxt.points)} pts</b> at ${fmtTime(nxt.sec)}` : 'Max points today!';
   const ribbon = r.newBest
-    ? `<div class="dv-res-stamp">${glyph('crown')}<span>${r.firstOfDay ? 'First dive today' : 'NEW BEST'}</span></div>${r.firstOfDay ? '' : `<div class="dv-res-was">was ${fmtTime(r.prevBestSec)} · +${fmtTime(Math.max(0, r.sec - r.prevBestSec))}</div>`}`
-    : `<div class="dv-res-bestline">Best today <b>${fmtTime(r.bestSec)}</b> stays${r.bestSec > r.sec ? ` · ${fmtTime(r.bestSec - r.sec)} short` : ''}</div>`;
+    ? `<div class="dv-res-stamp">${glyph('crown')}<span>${r.demo ? 'Demo run' : r.firstOfDay ? 'First dive today' : 'NEW BEST'}</span></div>${r.firstOfDay ? '' : `<div class="dv-res-was">was ${fmtTime(r.prevBestSec)} · +${fmtTime(Math.max(0, Math.floor(r.sec) - Math.floor(r.prevBestSec)))}</div>`}`
+    : `<div class="dv-res-bestline">Best today <b>${fmtTime(r.bestSec)}</b> stays${Math.floor(r.bestSec) > Math.floor(r.sec) ? ` · ${fmtTime(Math.floor(r.bestSec) - Math.floor(r.sec))} short` : ''}</div>`;
   el.innerHTML = `
     <div class="dv-res-glow"></div>
     <div class="dv-res-inner">
+      ${r.demo ? `<div class="dv-demo-tag" role="note">${h(r.demo)} · not saved</div>` : ''}
+      <div class="dv-res-a">
       <div class="dv-res-k">Delve #${r.day} · try ${r.tries}</div>
       <h2 class="dv-res-title">${h(r.title)}</h2>
       <div class="dv-res-time" aria-label="Survived ${fmtTime(r.sec)}">0:00</div>
       ${ribbon}
       <p class="dv-res-line">${h(r.line)}</p>
       <p class="dv-res-tip">${glyph('lantern')}<span>${h(r.tip)}</span></p>
+      </div>
+      <div class="dv-res-b">
       <div class="dv-res-grid">
-        <div class="dv-stat dv-rank"><span class="dv-stat-k">Rank today</span><b class="dv-rank-v">${h(r.top)}</b>${rankCurve(r.bestSec)}${r.tryTop && r.sec < r.bestSec ? `<small class="dv-rank-try">This try (${fmtTime(r.sec)}): ${h(r.tryTop)}</small>` : ''}<small>estimate from bot runs, not real players</small></div>
+        ${rankBlock(r)}${rankCurve(r.bestSec)}${r.topPct >= 90 ? '' : r.tryTop && r.sec < r.bestSec ? `<small class="dv-rank-try">This try (${fmtTime(r.sec)}): ${h(r.tryTop)}</small>` : ''}<small>${r.topPct >= 90 ? `Bot-run rank: ${h(r.top.replace(' of bot runs', ''))}` : 'estimate from bot runs, not real players'}</small></div>
         <div class="dv-stat dv-pts"><span class="dv-stat-k">Points</span><b class="dv-pts-v">${r.gained > 0 ? '+0' : fmtInt(r.dayPoints)}</b>
           <div class="dv-pts-bar" role="meter" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="${r.dayPoints}" aria-label="Points today"><i class="old" style="width:${before / 10}%"></i><i class="new" style="left:${before / 10}%;--w:${r.gained / 10}%"></i></div>
           <small>${ptsSub}</small><small class="dv-pts-next">${nextLine}</small></div>
       </div>
+      <div class="dv-sharecard"><div class="dv-share-k">${r.demo ? 'Share card (demo run)' : 'Share your best today'}</div>
+        ${shareCardArt(r)}
+        <pre class="dv-share" aria-label="Share text">${h(r.share)}</pre>
+        <div class="dv-row"><button class="dv-btn ghost dv-copy">${glyph('copy')}<span>Copy</span></button>${r.canShare ? `<button class="dv-btn ghost dv-nshare">${glyph('share')}<span>Share</span></button>` : ''}</div>
+      </div>
+      </div>
+      <div class="dv-res-c">
       <div class="dv-res-mini">
         <span><b>${r.level}</b>level</span><span><b>${fmtInt(r.kills)}</b>kills</span><span><b>${r.bosses}/5</b>bosses</span><span><b>${r.fusions}</b>fusion${r.fusions === 1 ? '' : 's'}</span>
       </div>
       <div class="dv-res-build">${build}${r.relics.length ? `<span class="dv-brelics">${glyph('relic')}${r.relics.map(h).join(', ')}</span>` : ''}</div>
-      <div class="dv-sharecard"><div class="dv-share-k">Share your best today</div>
-        ${shareCardArt(r)}
-        <pre class="dv-share" aria-label="Share text">${h(r.share)}</pre>
-        <div class="dv-row"><button class="dv-btn ghost dv-copy">${glyph('copy')}<span>Copy</span></button>${r.canShare ? `<button class="dv-btn ghost dv-nshare">${glyph('share')}<span>Share</span></button>` : ''}</div>
       </div>
       <div class="dv-res-actions">
         <button class="dv-btn dv-again">${glyph('lantern')}<span>DIVE AGAIN</span></button>
@@ -476,6 +508,8 @@ export function resultsScreen(parent: HTMLElement, r: ResultsData, cb: ResultsCa
   // --- the reveal: time counts up and lands, then the ribbon / fanfare, then the points tally
   const timeEl = el.querySelector('.dv-res-time')!;
   const ptsEl = el.querySelector('.dv-pts-v')!;
+  const totEl = el.querySelector('.dv-pts-tot');
+  const newBar = el.querySelector<HTMLElement>('.dv-pts-bar i.new');
   const cancels: (() => void)[] = [];
   const timers: number[] = [];
   const later = (ms: number, f: () => void) => timers.push(window.setTimeout(() => el.isConnected && f(), ms));
@@ -484,6 +518,8 @@ export function resultsScreen(parent: HTMLElement, r: ResultsData, cb: ResultsCa
     timers.forEach((t) => clearTimeout(t));
     timeEl.textContent = fmtTime(r.sec);
     if (r.gained > 0) ptsEl.textContent = `+${fmtInt(r.gained)}`;
+    if (totEl) totEl.textContent = fmtInt(r.dayPoints);
+    if (newBar && newBar.style.width) newBar.style.width = `${r.gained / 10}%`;
     el.classList.add('t-landed', 't-ribbon', 't-points');
   };
   if (r.reduced) {
@@ -504,7 +540,17 @@ export function resultsScreen(parent: HTMLElement, r: ResultsData, cb: ResultsCa
     });
     later(r.newBest ? 900 : 400, () => {
       el.classList.add('t-points');
-      if (r.gained > 0) cancels.push(countUp(ptsEl, 0, r.gained, Math.min(1400, 500 + r.gained), (n) => `+${fmtInt(n)}`, (p) => cb.onTally?.(p)));
+      if (r.gained > 0) {
+        cancels.push(countUp(ptsEl, 0, r.gained, Math.min(1400, 500 + r.gained), (n) => {
+          const g = Math.round(n);
+          if (totEl) totEl.textContent = fmtInt(before + g);
+          if (newBar) {
+            newBar.style.transition = 'none';
+            newBar.style.width = `${g / 10}%`;
+          }
+          return `+${fmtInt(g)}`;
+        }, (p) => cb.onTally?.(p)));
+      }
     });
   })));
   // a tap anywhere skips the show

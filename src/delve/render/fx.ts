@@ -377,7 +377,7 @@ function digitAtlas(): THREE.CanvasTexture {
 }
 
 const MAX_DIGITS = 6; // 5 digits + an optional '!' on crits
-const NS = 11; // floats per number: x, h, y, vx, vh, life, maxLife, value, hex, size, crit
+const NS = 13; // floats per number: x, h, y, vx, vh, life, maxLife, value, hex, size, crit, alpha mult, key
 
 export class DamageNumbers {
   readonly mesh: THREE.InstancedMesh;
@@ -387,6 +387,13 @@ export class DamageNumbers {
   private readonly a: THREE.InstancedBufferAttribute;
   /** Spawns allowed this frame (budget keeps a crowd from turning into soup). */
   budget = 0;
+  /** The delver's floor position: numbers fade out right around it so they never cover the delver. */
+  px = 0;
+  py = 0;
+  /** Running typical hit size (EMA), so sizes read relative to the build's current power. */
+  private ref = 20;
+  /** Per enemy slot: the live number that hits on it fold into (aggregation), or -1. */
+  private readonly byKey = new Int16Array(1024).fill(-1);
 
   constructor(cap: number) {
     this.cap = cap;
@@ -402,18 +409,69 @@ export class DamageNumbers {
     this.mesh.count = 0;
   }
 
-  /** crit = 1 adds a '!' and a bigger pop with a wobble. */
-  add(x: number, h: number, y: number, value: number, hex: number, size: number, life = 0.75, crit = 0): void {
+  /**
+   * A hit on enemy slot `key` (or -1). Hits on the same critter within ~0.45 s fold into one number that ticks up and
+   * re-pops; sizes follow the hit relative to the running typical hit (small chip damage is small and dim); new numbers
+   * only spawn while the budget allows, so a 400-critter Core reads as a few numbers, not soup.
+   */
+  hit(key: number, x: number, h: number, y: number, value: number, hex: number, crit: boolean, dot: boolean): void {
+    if (value < 1) return;
+    if (!dot) this.ref += (value - this.ref) * 0.03;
+    const d = this.d;
+    const k = key >= 0 && key < 1024 ? key : -1;
+    if (k >= 0) {
+      const j = this.byKey[k];
+      if (j >= 0) {
+        const o = j * NS;
+        const age = d[o + 6] - d[o + 5];
+        // a target under constant fire (the Wyrm) re-pops forever: once the total would pass 5 digits, start a fresh
+        // number instead of pinning at "99999" (v0.2 review)
+        if (d[o + 5] > 0 && d[o + 12] === k && age < 0.45 && d[o + 7] + value <= 99999) {
+          d[o + 7] = d[o + 7] + value;
+          if (crit) d[o + 10] = 1;
+          if (d[o + 10]) d[o + 8] = 0xffd23a;
+          else if (!dot) d[o + 8] = hex;
+          d[o + 9] = this.sizeFor(d[o + 7], d[o + 10] > 0, false);
+          d[o + 11] = 1;
+          // re-pop and hold: a number that keeps climbing stays readable
+          d[o + 5] = Math.max(d[o + 5], d[o + 6] - 0.06);
+          return;
+        }
+      }
+    }
     if (this.budget <= 0) return;
+    // tiny DoT ticks never get their own number unless budget is plentiful
+    if (dot && value < this.ref * 0.25 && this.budget < 2) return;
+    const life = crit ? 0.9 : dot ? 0.55 : 0.7;
+    const j = this.add(x, h, y, value, crit ? 0xffd23a : hex, this.sizeFor(value, crit, dot), life, crit ? 1 : 0);
+    if (j < 0) return;
+    const o = j * NS;
+    d[o + 11] = value < this.ref * 0.35 && !crit ? 0.7 : 1;
+    d[o + 12] = k;
+    if (k >= 0) this.byKey[k] = j;
+  }
+
+  private sizeFor(v: number, crit: boolean, dot: boolean): number {
+    const lr = Math.log2(Math.max(0.05, v / Math.max(1, this.ref)));
+    const base = crit ? 0.72 : dot ? 0.38 : 0.48;
+    return base * Math.max(0.55, Math.min(crit ? 1.35 : 1.15, 1 + 0.2 * lr));
+  }
+
+  /** crit = 1 adds a '!' and a bigger pop with a wobble. Returns the number's index or -1. */
+  add(x: number, h: number, y: number, value: number, hex: number, size: number, life = 0.75, crit = 0): number {
+    if (this.budget <= 0) return -1;
     const v = Math.round(value);
-    if (v <= 0) return;
+    if (v <= 0) return -1;
     this.budget--;
+    const idx = this.head;
     const o = this.head * NS;
     this.head = (this.head + 1) % this.cap;
     const d = this.d;
     d[o] = x + (Math.random() - 0.5) * 0.6; d[o + 1] = h + Math.random() * 0.3; d[o + 2] = y + (Math.random() - 0.5) * 0.3;
     d[o + 3] = (Math.random() - 0.5) * 1.4; d[o + 4] = crit ? 3.4 : 2.6;
     d[o + 5] = life; d[o + 6] = life; d[o + 7] = Math.min(99999, v); d[o + 8] = hex; d[o + 9] = size; d[o + 10] = crit;
+    d[o + 11] = 1; d[o + 12] = -1;
+    return idx;
   }
 
   update(dt: number): void {
@@ -439,8 +497,12 @@ export class DamageNumbers {
       const pin = age < 0.11 ? age / 0.11 : 1;
       const pop = pin < 1 ? 0.4 + 1.25 * pin * (2 - pin) * (crit ? 1.25 : 1) : 1 + (crit ? 0.25 : 0.12) * Math.max(0, 1 - (age - 0.11) * 6);
       const s = d[o + 9] * pop * (t < 0.25 ? 0.7 + 1.2 * t : 1);
-      const alpha = t < 0.3 ? t / 0.3 : 1;
-      const v = d[o + 7];
+      const pdx = d[o] - this.px, pdy = d[o + 2] - this.py;
+      const pd = Math.sqrt(pdx * pdx + pdy * pdy);
+      const clearK = pd >= 2.2 ? 1 : pd <= 1.0 ? 0 : (pd - 1.0) / 1.2;
+      const alpha = (t < 0.3 ? t / 0.3 : 1) * d[o + 11] * clearK;
+      if (alpha < 0.02) continue;
+      const v = Math.round(d[o + 7]);
       const digits = v >= 10000 ? 5 : v >= 1000 ? 4 : v >= 100 ? 3 : v >= 10 ? 2 : 1;
       const glyphs = digits + (crit ? 1 : 0);
       const wob = crit && age < 0.35 ? Math.sin(age * 60) * 0.06 * (1 - age / 0.35) : 0;
@@ -477,5 +539,6 @@ export class DamageNumbers {
 
   clear(): void {
     for (let i = 0; i < this.cap; i++) this.d[i * NS + 5] = 0;
+    this.byKey.fill(-1);
   }
 }

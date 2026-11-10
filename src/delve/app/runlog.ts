@@ -58,6 +58,32 @@ export interface DeathContext {
   staggerSec?: number;
   /** player.dmgByCause (indexed by DEATH.*): damage taken per cause over the run. */
   dmgByCause?: ArrayLike<number>;
+  /** Boss index (content/bosses.ts order) of the newest boss still alive at death, or -1 / undefined. */
+  liveBoss?: number;
+  /** Non-fused spells owned, their highest rank, and fusions made (for the build tip). */
+  spells?: number;
+  maxRank?: number;
+  fusions?: number;
+}
+
+/**
+ * What beats each boss, in plain words (v0.2 review: casual players died to the same boss three times with the same
+ * generic tip and had no idea what to try differently). Index = content/bosses.ts order.
+ */
+export const BOSS_TIPS: readonly string[] = [
+  'The Foreman leaps onto its red circle: walk out sideways the moment the circle appears.',
+  'Sporemother leaves spore puddles that keep hurting: circle her and never back into an old puddle.',
+  'The Drowned Engine charges down its red lane: step or dash sideways out of the lane, not backwards.',
+  'Prism Warden beams are long lanes that bounce off the wall: cross them sideways, then keep circling.',
+  'The Anvil King mixes every attack: keep circling and save your dash for its charge lane.',
+];
+
+/** "You spread over 6 spells" tip, or '' when the build is focused enough. */
+function buildTip(ctx: DeathContext): string {
+  if ((ctx.spells ?? 0) >= 4 && (ctx.maxRank ?? 5) < 4 && !(ctx.fusions ?? 0)) {
+    return `You spread over ${ctx.spells} spells, none above rank ${Math.floor(ctx.maxRank ?? 3)}. Ranking one or two up to 5 hits much harder, and that is how spells fuse.`;
+  }
+  return '';
 }
 
 const RED_TIP = 'When the floor turns red, walk out before it fills. A dash makes you immune.';
@@ -90,7 +116,9 @@ export function deathSummary(cause: number, sec: number, log: RunLog | null, ctx
             : gap > 40
               ? `You dropped below half health at ${fmtTime(healthy)} and never got it back.`
               : `Your kill rate fell behind at ${fmtTime(healthy)}.`,
-        tip: 'Area spells (splash, auras, puddles) thin the crowd. Two keywords at high rank can fuse.',
+        tip: buildTip(ctx)
+          || (ctx.liveBoss !== undefined && ctx.liveBoss >= 0 && BOSS_TIPS[ctx.liveBoss] ? `${ctx.bossName ?? 'The boss'} was still up. ${BOSS_TIPS[ctx.liveBoss]}` : '')
+          || 'Area spells (splash, auras, puddles) thin the crowd. Two keywords at high rank can fuse.',
       };
     }
     case DEATH.BURST:
@@ -103,7 +131,7 @@ export function deathSummary(cause: number, sec: number, log: RunLog | null, ctx
       return {
         title: `Felled by ${ctx.bossName ?? 'a boss'} at ${at}`,
         line: 'Bosses hit hard up close and keep coming while trash spawns.',
-        tip: 'Keep moving around the boss and step off its red floor.',
+        tip: (ctx.liveBoss !== undefined && BOSS_TIPS[ctx.liveBoss]) || 'Keep moving around the boss and step off its red floor.',
       };
     case DEATH.WYRMFALL:
       return {

@@ -1,8 +1,8 @@
 /**
  * Pressure curves, trash spawning, the render cap queue, Clumps and formations (COMBAT), spec 7.1.
  *
- * - n(t) = 1.6 e^(0.20 L_d) e^(0.08 c) units/s (x Omen), hpU and contact damage per spec 7.1, with
- *   the Core-entry HP step ramped 1.0 -> 1.5 over 5:20-6:20.
+ * - n(t) = BAL.n0 e^(nD L_d) e^(nC c) units/s (x Omen; BOT v0.2: 1.3 e^(0.26 L_d) e^(0.08 c)), hpU and contact damage per spec 7.1, with
+ *   the Core-entry HP step ramped 1.0 -> BAL.coreStep over BAL.coreStepT0-T1 (BOT v0.2: x2.1 over 5:00-9:00).
  * - Kinds come from the layer's weighted mix (content/layers.ts). Every spawn draws exactly three
  *   numbers from w.rng.spawn (kind, angle, distance), so the stream stays aligned for everyone.
  *   Bats arrive in packs that share an anchor (a swarm).
@@ -13,7 +13,7 @@
  *
  * Stable fields read by UI/RENDER/BOT: trashAlive, queued, clumps, formationUntil, nextFormationTick.
  */
-import { BAL, CAP, DT, TICK_HZ, secToTicks } from '../core/constants';
+import { BAL, CAP, DT, TICK_HZ, TIMELINE, secToTicks } from '../core/constants';
 import { EV } from '../core/events';
 import { cosIdx, fexp, sinIdx } from '../core/fmath';
 import { deriveRng, type Rng } from '../core/rng';
@@ -125,7 +125,7 @@ function split(w: World): void {
   CM = m > 5 ? m - 5 : 0;
 }
 
-/** Core-entry HP step, ramped 1.0 -> 1.5 over 5:20-6:20. */
+/** Core-entry HP step, ramped 1.0 -> BAL.coreStep over BAL.coreStepT0..coreStepT1 seconds. */
 export function coreStep(w: World): number {
   const t = w.tick * DT;
   if (t <= BAL.coreStepT0) return 1;
@@ -149,8 +149,25 @@ export function contactDmg(w: World): number {
   return BAL.dmg0 * fexp(BAL.dmgD * LD) * fexp(BAL.dmgC * CM) * w.mods.contactDmgMul;
 }
 
+/**
+ * Seconds over which a new layer's enemy mix fades in (v0.2 FIX: the hard swap to the heavier Ember Forge mix at 4:00 piled
+ * weak builds' daily bests into 4:10-4:20; balance gate 2). During the window a spawn keeps the previous layer's mix with
+ * probability 1 - elapsed / MIX_BLEND_S, decided from the low digits of the same kind roll (no extra rng draw).
+ */
+export const MIX_BLEND_S = 20;
+
 function pickKind(w: World, u: number): number {
-  const mix = MIXES[(w.layer < 1 ? 1 : w.layer > 6 ? 6 : w.layer) - 1];
+  let L = w.layer < 1 ? 1 : w.layer > 6 ? 6 : w.layer;
+  if (L > 1) {
+    const start = L <= 5 ? (L - 1) * TIMELINE.layerSeconds : TIMELINE.coreStart;
+    const el = w.tick * DT - start;
+    if (el >= 0 && el < MIX_BLEND_S) {
+      const v = u * 1024;
+      const sub = v - Math.floor(v); // independent-enough second uniform from the same draw
+      if (sub * MIX_BLEND_S >= el) L--;
+    }
+  }
+  const mix = MIXES[L - 1];
   const roll = u * mix.total;
   for (let k = 0; k < mix.defs.length; k++) if (roll < mix.cum[k]) return mix.defs[k];
   return mix.defs[mix.defs.length - 1];
