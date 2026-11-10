@@ -14,6 +14,7 @@ export default defineConfig(({ command }) => ({
         landing: resolve(__dirname, 'index.html'),
         play: resolve(__dirname, 'play/index.html'),
         privacy: resolve(__dirname, 'privacy.html'),
+        delve: resolve(__dirname, 'delve/index.html'),
       },
     },
   },

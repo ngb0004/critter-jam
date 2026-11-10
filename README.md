@@ -54,3 +54,44 @@ of carts that fill by avalanche is kept at 10–35% so avalanches stay earned.
 - `marketing/recorder/`: ad clip recorder (needs `npx vite preview --port 4191 --base /critter-jam/`).
 
 `npm run dev`, `npm test`, `npm run build`.
+
+## Delve Daily (`/delve/`)
+
+A second, separate game in the same repo: a daily-seed survivors-like. Everyone
+gets the same dive each day (reset 10:00 UTC); you steer a lantern-bearing delver
+through five one-minute layers with bosses, then the endless Core, until the
+Wyrmfall ends the run. Attacks fire on their own, so you only move. Your best run
+of the day counts, and points are paid when a run ends. The rank ("Top 18% est.")
+is an estimate from bot runs, not from real players. There is no backend, no
+accounts and no ads; progress lives in `localStorage`.
+
+**Play:** https://ngb0004.github.io/critter-jam/delve/ (locally: `npm run dev`, then `/delve/`)
+
+**Controls:**
+- Move with WASD, the arrow keys, or one thumb dragged anywhere on screen.
+- Dash with Space or the round button.
+- At level-up, pick a card with a click or 1-4. R rerolls (2 per run) and B banishes (1 per run).
+- P or Esc pauses.
+- Red floor means move out of it. Gold means pick it up.
+
+**Code:** `src/delve/`. Read `src/delve/ARCHITECTURE.md` first; it covers module ownership, the sim contracts and the changelog.
+- `core/`: fixed 60 Hz deterministic world, seeded RNG, `fmath` tables, daily seed, replays.
+- `sim/`: combat, spells, enemies, bosses, hazards, offers and build.
+- `content/`: specs, spells, fusions, passives, relics, talents, Omens and layers.
+- `render/`: three.js renderer, which only reads sim state.
+- `ui/`: DOM screens, cards, HUD, fusion reveal, input.
+- `app/`: save, points, percentile, share text, synthesized audio.
+- `bot/`: bot players. `bot/population.ts` is the table the rank estimate uses.
+- Scripts: `scripts/delve-bots.ts` and `scripts/delve-population.ts`.
+
+**Debug URL params** (these runs go to a scratch save and never touch your real bests):
+- `?fresh=1` uses an in-memory save.
+- `?go=ember|venom` starts a run at once.
+- `?bot=1|move|idle` lets a bot play.
+- `?speed=N` runs N ticks per real tick.
+- `?guard=1` keeps HP from dropping below 40%.
+- `?day=N` plays a different day.
+- `?debug` shows the FPS overlay and `__delveStress(true)`.
+- `?quality=0..4` pins the render quality.
+
+`npx vite preview --base /critter-jam/` serves the built site at its Pages paths.
